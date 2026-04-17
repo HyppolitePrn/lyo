@@ -7,7 +7,7 @@ import (
 
 // Flag represents a toggleable feature flag stored in the database.
 type Flag struct {
-	ID          int64     `db:"id"`
+	ID          string    `db:"id"`
 	Name        string    `db:"name"`
 	Enabled     bool      `db:"enabled"`
 	Description string    `db:"description"`
