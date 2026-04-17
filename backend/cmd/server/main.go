@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -27,6 +28,26 @@ import (
 	"github.com/hyppoliteprn/lyo/pkg/config"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
 )
+
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+func writeJSONError(w http.ResponseWriter, status int, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if encodeErr := json.NewEncoder(w).Encode(errorResponse{Error: err.Error()}); encodeErr != nil {
+		http.Error(w, http.StatusText(status), status)
+	}
+}
+
+func handleResponseError(w http.ResponseWriter, _ *http.Request, err error) {
+	writeJSONError(w, http.StatusNotImplemented, err)
+}
+
+func handleRequestError(w http.ResponseWriter, _ *http.Request, err error) {
+	writeJSONError(w, http.StatusBadRequest, err)
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -79,7 +100,14 @@ func main() {
 	r.Use(middleware.Authenticate(authSvc))
 
 	// Mount generated API routes (stubs — real logic added per feature)
-	strict := api.NewStrictHandler(api.NewHandlers(), nil)
+	strict := api.NewStrictHandlerWithOptions(
+		api.NewHandlers(),
+		nil,
+		api.StrictHTTPServerOptions{
+			ResponseErrorHandlerFunc: handleResponseError,
+			RequestErrorHandlerFunc:  handleRequestError,
+		},
+	)
 	api.HandlerFromMux(strict, r)
 
 	srv := &http.Server{
