@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS streams;
+DROP TYPE IF EXISTS stream_status;

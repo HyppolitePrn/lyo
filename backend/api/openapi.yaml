@@ -1,0 +1,735 @@
+openapi: "3.1.0"
+
+info:
+  title: Lyo API
+  version: "1.0.0"
+  description: >
+    REST API for the Lyo audio streaming platform.
+    Real-time audio broadcast via WebSocket is handled out-of-band and is not documented here.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: integer }
+        message: { type: string }
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 30 }
+        email:    { type: string, format: email }
+        password: { type: string, minLength: 8 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    TokenResponse:
+      type: object
+      required: [access_token, refresh_token]
+      properties:
+        access_token:  { type: string }
+        refresh_token: { type: string }
+
+    # ── Users ─────────────────────────────────────────────────────────────────
+    Role:
+      type: string
+      enum: [anonymous, user, broadcaster, admin]
+
+    User:
+      type: object
+      required: [id, username, email, role, favorite_track_ids, favorite_stream_ids, favorite_playlist_ids, created_at, updated_at]
+      properties:
+        id:                    { type: string, format: uuid }
+        username:              { type: string }
+        email:                 { type: string, format: email }
+        role:                  { $ref: '#/components/schemas/Role' }
+        favorite_track_ids:    { type: array, items: { type: string, format: uuid } }
+        favorite_stream_ids:   { type: array, items: { type: string, format: uuid } }
+        favorite_playlist_ids: { type: array, items: { type: string, format: uuid } }
+        created_at:            { type: string, format: date-time }
+        updated_at:            { type: string, format: date-time }
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        username: { type: string, minLength: 3, maxLength: 30 }
+        email:    { type: string, format: email }
+
+    # ── Tracks ────────────────────────────────────────────────────────────────
+    Track:
+      type: object
+      required: [id, broadcaster_id, title, audio_url, duration_seconds, created_at]
+      properties:
+        id:               { type: string, format: uuid }
+        broadcaster_id:   { type: string, format: uuid }
+        title:            { type: string }
+        artist:           { type: string }
+        audio_url:        { type: string, format: uri }
+        duration_seconds: { type: integer, minimum: 0 }
+        created_at:       { type: string, format: date-time }
+
+    CreateTrackRequest:
+      type: object
+      required: [title, audio_url]
+      properties:
+        title:            { type: string, minLength: 1, maxLength: 200 }
+        artist:           { type: string, maxLength: 200 }
+        audio_url:        { type: string, format: uri }
+        duration_seconds: { type: integer, minimum: 0 }
+
+    TrackList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Track' } }
+
+    # ── Streams ───────────────────────────────────────────────────────────────
+    StreamStatus:
+      type: string
+      enum: [live, ended]
+
+    Stream:
+      type: object
+      required: [id, broadcaster_id, title, status, started_at]
+      properties:
+        id:             { type: string, format: uuid }
+        broadcaster_id: { type: string, format: uuid }
+        title:          { type: string }
+        description:    { type: string }
+        status:         { $ref: '#/components/schemas/StreamStatus' }
+        started_at:     { type: string, format: date-time }
+        ended_at:       { type: string, format: date-time }
+
+    CreateStreamRequest:
+      type: object
+      required: [title]
+      properties:
+        title:       { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+
+    StreamList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Stream' } }
+
+    # ── Playlists ─────────────────────────────────────────────────────────────
+    Playlist:
+      type: object
+      required: [id, owner_id, title, track_ids, created_at, updated_at]
+      properties:
+        id:          { type: string, format: uuid }
+        owner_id:    { type: string, format: uuid }
+        title:       { type: string }
+        description: { type: string }
+        track_ids:   { type: array, items: { type: string, format: uuid } }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+
+    CreatePlaylistRequest:
+      type: object
+      required: [title]
+      properties:
+        title:       { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+
+    UpdatePlaylistRequest:
+      type: object
+      properties:
+        title:       { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+
+    PlaylistList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Playlist' } }
+
+    AddTrackToPlaylistRequest:
+      type: object
+      required: [track_id]
+      properties:
+        track_id: { type: string, format: uuid }
+
+    # ── Feature Flags ─────────────────────────────────────────────────────────
+    FeatureFlag:
+      type: object
+      required: [id, name, enabled, description, updated_at]
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        enabled:     { type: boolean }
+        description: { type: string }
+        updated_at:  { type: string, format: date-time }
+
+    FeatureFlagList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/FeatureFlag' } }
+
+    ToggleFlagRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    # ── Health ────────────────────────────────────────────────────────────────
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnprocessableEntity:
+      description: Validation error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+security: []
+
+paths:
+  # ── Health ─────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      operationId: GetHealth
+      summary: Health check
+      tags: [health]
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
+  # ── Auth ───────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      operationId: Register
+      summary: Create a new account
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        "201":
+          description: Account created; returns token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        "422": { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /auth/login:
+    post:
+      operationId: Login
+      summary: Authenticate and obtain tokens
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        "200":
+          description: Successful login
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      operationId: RefreshToken
+      summary: Exchange a refresh token for a new token pair
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  # ── Users ──────────────────────────────────────────────────────────────────
+  /users/me:
+    get:
+      operationId: GetMe
+      summary: Return the authenticated user's profile
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      operationId: UpdateMe
+      summary: Update the authenticated user's profile
+      tags: [users]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+      responses:
+        "200":
+          description: Updated user profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "422": { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /users/me/favorites/tracks/{trackId}:
+    parameters:
+      - name: trackId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: FavoriteTrack
+      summary: Add a track to favorites
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Track added to favorites
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: UnfavoriteTrack
+      summary: Remove a track from favorites
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Track removed from favorites
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /users/me/favorites/streams/{streamId}:
+    parameters:
+      - name: streamId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: FavoriteStream
+      summary: Add a stream to favorites
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Stream added to favorites
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: UnfavoriteStream
+      summary: Remove a stream from favorites
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Stream removed from favorites
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /users/me/favorites/playlists/{playlistId}:
+    parameters:
+      - name: playlistId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: FavoritePlaylist
+      summary: Add a playlist to favorites
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Playlist added to favorites
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: UnfavoritePlaylist
+      summary: Remove a playlist from favorites
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Playlist removed from favorites
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  # ── Tracks ─────────────────────────────────────────────────────────────────
+  /tracks:
+    get:
+      operationId: ListTracks
+      summary: List tracks (public)
+      tags: [tracks]
+      parameters:
+        - name: broadcaster_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Track list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackList' }
+    post:
+      operationId: CreateTrack
+      summary: Upload a new track (broadcaster+ only)
+      tags: [tracks]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTrackRequest' }
+      responses:
+        "201":
+          description: Track created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Track' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /tracks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: GetTrack
+      summary: Get a single track
+      tags: [tracks]
+      responses:
+        "200":
+          description: Track details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Track' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: DeleteTrack
+      summary: Delete a track (owner or admin)
+      tags: [tracks]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Track deleted
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # ── Streams ────────────────────────────────────────────────────────────────
+  /streams:
+    get:
+      operationId: ListStreams
+      summary: List streams (public)
+      tags: [streams]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/StreamStatus' }
+      responses:
+        "200":
+          description: Stream list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StreamList' }
+    post:
+      operationId: CreateStream
+      summary: Start a new broadcast (broadcaster+ only)
+      tags: [streams]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStreamRequest' }
+      responses:
+        "201":
+          description: Stream created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stream' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /streams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: GetStream
+      summary: Get a single stream
+      tags: [streams]
+      responses:
+        "200":
+          description: Stream details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stream' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: DeleteStream
+      summary: End a broadcast (owner or admin)
+      tags: [streams]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Stream ended
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # ── Playlists ──────────────────────────────────────────────────────────────
+  /playlists:
+    get:
+      operationId: ListPlaylists
+      summary: List the authenticated user's playlists
+      tags: [playlists]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Playlist list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaylistList' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: CreatePlaylist
+      summary: Create a new playlist
+      tags: [playlists]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePlaylistRequest' }
+      responses:
+        "201":
+          description: Playlist created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Playlist' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /playlists/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: GetPlaylist
+      summary: Get a playlist
+      tags: [playlists]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Playlist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Playlist' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: UpdatePlaylist
+      summary: Update playlist metadata
+      tags: [playlists]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdatePlaylistRequest' }
+      responses:
+        "200":
+          description: Updated playlist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Playlist' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: DeletePlaylist
+      summary: Delete a playlist
+      tags: [playlists]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Playlist deleted
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /playlists/{id}/tracks:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: AddTrackToPlaylist
+      summary: Append a track to a playlist
+      tags: [playlists]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddTrackToPlaylistRequest' }
+      responses:
+        "200":
+          description: Updated playlist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Playlist' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /playlists/{id}/tracks/{trackId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: trackId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: RemoveTrackFromPlaylist
+      summary: Remove a track from a playlist
+      tags: [playlists]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Updated playlist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Playlist' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # ── Admin: Feature Flags ────────────────────────────────────────────────────
+  /admin/features:
+    get:
+      operationId: ListFeatureFlags
+      summary: List all feature flags (admin only)
+      tags: [admin]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Feature flag list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureFlagList' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /admin/features/{name}/toggle:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      operationId: ToggleFeatureFlag
+      summary: Enable or disable a feature flag (admin only)
+      tags: [admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ToggleFlagRequest' }
+      responses:
+        "200":
+          description: Updated flag
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureFlag' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }

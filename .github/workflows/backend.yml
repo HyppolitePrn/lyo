@@ -36,6 +36,9 @@ jobs:
       - name: golangci-lint
         run: golangci-lint run ./...
 
+      - name: Generate API types
+        run: go generate ./internal/api/
+
       - name: Test (race detector)
         run: go test -race -coverprofile=coverage.out ./...
 
