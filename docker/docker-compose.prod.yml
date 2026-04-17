@@ -3,7 +3,7 @@ name: lyo-prod
 services:
   # ── Application ──────────────────────────────────────────────────────────────
   backend:
-    image: ghcr.io/hyppoliteprn/lyo-backend:latest
+    image: ghcr.io/${GHCR_OWNER:-hyppoliteprn}/lyo-backend:latest
     ports:
       - "${SERVER_PORT:-8080}:8080"
     env_file: .env

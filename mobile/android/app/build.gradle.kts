@@ -11,7 +11,9 @@ plugins {
 // Falls back to debug signing when the file is absent (normal local development).
 val keyPropertiesFile = rootProject.file("key.properties")
 val keyProperties = Properties().apply {
-    if (keyPropertiesFile.exists()) load(keyPropertiesFile.inputStream())
+    if (keyPropertiesFile.exists()) {
+        keyPropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -33,7 +35,7 @@ android {
             create("release") {
                 keyAlias = keyProperties["keyAlias"] as String
                 keyPassword = keyProperties["keyPassword"] as String
-                storeFile = file(keyProperties["storeFile"] as String)
+                storeFile = rootProject.file(keyProperties["storeFile"] as String)
                 storePassword = keyProperties["storePassword"] as String
             }
         }

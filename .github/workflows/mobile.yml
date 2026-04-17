@@ -3,9 +3,6 @@ name: Mobile CI/CD
 on:
   push:
     branches: [main]
-    paths:
-      - "mobile/**"
-      - ".github/workflows/mobile.yml"
     tags:
       - "v*.*.*"
   pull_request:
