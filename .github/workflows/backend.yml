@@ -72,8 +72,8 @@ jobs:
           file: ./docker/backend.Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/lyo-backend:latest
-            ghcr.io/${{ github.repository_owner }}/lyo-backend:sha-${{ github.sha }}
+            ghcr.io/hyppoliteprn/lyo-backend:latest
+            ghcr.io/hyppoliteprn/lyo-backend:sha-${{ github.sha }}
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
