@@ -21,9 +21,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/api"
+	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/observability"
+	"github.com/hyppoliteprn/lyo/internal/user"
 	"github.com/hyppoliteprn/lyo/migrations"
 	"github.com/hyppoliteprn/lyo/pkg/config"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
@@ -42,6 +43,10 @@ func writeJSONError(w http.ResponseWriter, status int, err error) {
 }
 
 func handleResponseError(w http.ResponseWriter, _ *http.Request, err error) {
+	if he, ok := errors.AsType[*api.HTTPError](err); ok {
+		writeJSONError(w, he.Code, errors.New(he.Msg))
+		return
+	}
 	writeJSONError(w, http.StatusNotImplemented, err)
 }
 
@@ -52,7 +57,7 @@ func handleRequestError(w http.ResponseWriter, _ *http.Request, err error) {
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "config error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -93,15 +98,18 @@ func main() {
 	// ── Auth & router ─────────────────────────────────────────────────────────
 	authSvc := auth.NewService(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL, cfg.Auth.RefreshTTL)
 
+	userRepo := user.NewRepository(pool)
+	userSvc := user.NewService(userRepo, authSvc)
+
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.Logger(logger))
 	r.Use(middleware.Authenticate(authSvc))
 
-	// Mount generated API routes (stubs — real logic added per feature)
+	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(),
+		api.NewHandlers(userSvc, authSvc, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,
