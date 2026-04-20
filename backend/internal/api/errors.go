@@ -9,14 +9,14 @@ import (
 
 var errNotImplemented = errors.New("not implemented")
 
-// httpError carries an HTTP status code and message through the handler chain.
-type httpError struct {
-	code int
-	msg  string
+// HTTPError carries an HTTP status code and message through the handler chain.
+type HTTPError struct {
+	Code int
+	Msg  string
 }
 
-func (e *httpError) Error() string {
-	return fmt.Sprintf("%d: %s", e.code, e.msg)
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("%d: %s", e.Code, e.Msg)
 }
 
 // isUniqueViolation reports whether err is a PostgreSQL unique constraint violation (23505).

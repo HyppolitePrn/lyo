@@ -43,6 +43,10 @@ func writeJSONError(w http.ResponseWriter, status int, err error) {
 }
 
 func handleResponseError(w http.ResponseWriter, _ *http.Request, err error) {
+	if he, ok := errors.AsType[*api.HTTPError](err); ok {
+		writeJSONError(w, he.Code, errors.New(he.Msg))
+		return
+	}
 	writeJSONError(w, http.StatusNotImplemented, err)
 }
 

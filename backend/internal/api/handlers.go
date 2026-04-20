@@ -42,7 +42,7 @@ func (h *Handlers) Register(ctx context.Context, req RegisterRequestObject) (Reg
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			h.logger.WarnContext(ctx, "register timeout", "route", "POST /auth/register")
-			return nil, &httpError{code: http.StatusServiceUnavailable, msg: "request timeout"}
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
 		}
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (h *Handlers) Login(ctx context.Context, req LoginRequestObject) (LoginResp
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			h.logger.WarnContext(ctx, "login timeout", "route", "POST /auth/login")
-			return nil, &httpError{code: http.StatusServiceUnavailable, msg: "request timeout"}
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
 		}
 		return nil, err
 	}
@@ -80,12 +80,7 @@ func (h *Handlers) Login(ctx context.Context, req LoginRequestObject) (LoginResp
 	}), nil
 }
 
-func (h *Handlers) RefreshToken(ctx context.Context, req RefreshTokenRequestObject) (RefreshTokenResponseObject, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	_ = ctx
-
+func (h *Handlers) RefreshToken(_ context.Context, req RefreshTokenRequestObject) (RefreshTokenResponseObject, error) {
 	claims, err := h.authSvc.Verify(req.Body.RefreshToken)
 	if err != nil {
 		return RefreshToken401JSONResponse{
