@@ -3,29 +3,108 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/user"
 )
 
-var errNotImplemented = errors.New("not implemented")
-
 // Handlers implements StrictServerInterface. Dependencies are injected feature by feature.
-type Handlers struct{}
+type Handlers struct {
+	userSvc *user.Service
+	authSvc *auth.Service
+	logger  *slog.Logger
+}
 
-func NewHandlers() *Handlers { return &Handlers{} }
+func NewHandlers(userSvc *user.Service, authSvc *auth.Service, logger *slog.Logger) *Handlers {
+	return &Handlers{userSvc: userSvc, authSvc: authSvc, logger: logger}
+}
 
 func (h *Handlers) GetHealth(_ context.Context, _ GetHealthRequestObject) (GetHealthResponseObject, error) {
 	return GetHealth200JSONResponse{Status: "ok"}, nil
 }
 
-func (h *Handlers) Register(_ context.Context, _ RegisterRequestObject) (RegisterResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) Register(ctx context.Context, req RegisterRequestObject) (RegisterResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	pair, err := h.userSvc.Register(ctx, req.Body.Username, string(req.Body.Email), req.Body.Password)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Register422JSONResponse{
+				UnprocessableEntityJSONResponse: UnprocessableEntityJSONResponse{
+					Code:    422,
+					Message: "email or username already taken",
+				},
+			}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "register timeout", "route", "POST /auth/register")
+			return nil, &httpError{code: http.StatusServiceUnavailable, msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	return Register201JSONResponse(TokenResponse{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+	}), nil
 }
 
-func (h *Handlers) Login(_ context.Context, _ LoginRequestObject) (LoginResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) Login(ctx context.Context, req LoginRequestObject) (LoginResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	pair, err := h.userSvc.Login(ctx, string(req.Body.Email), req.Body.Password)
+	if err != nil {
+		if errors.Is(err, user.ErrInvalidCredentials) {
+			return Login401JSONResponse{
+				UnauthorizedJSONResponse: UnauthorizedJSONResponse{
+					Code:    401,
+					Message: "invalid credentials",
+				},
+			}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "login timeout", "route", "POST /auth/login")
+			return nil, &httpError{code: http.StatusServiceUnavailable, msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	return Login200JSONResponse(TokenResponse{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+	}), nil
 }
 
-func (h *Handlers) RefreshToken(_ context.Context, _ RefreshTokenRequestObject) (RefreshTokenResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) RefreshToken(ctx context.Context, req RefreshTokenRequestObject) (RefreshTokenResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	_ = ctx
+
+	claims, err := h.authSvc.Verify(req.Body.RefreshToken)
+	if err != nil {
+		return RefreshToken401JSONResponse{
+			UnauthorizedJSONResponse: UnauthorizedJSONResponse{
+				Code:    401,
+				Message: "invalid or expired refresh token",
+			},
+		}, nil
+	}
+
+	pair, err := h.authSvc.Issue(claims.UserID, claims.Role)
+	if err != nil {
+		return nil, err
+	}
+
+	return RefreshToken200JSONResponse(TokenResponse{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+	}), nil
 }
 
 func (h *Handlers) GetMe(_ context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {

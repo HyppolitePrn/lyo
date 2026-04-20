@@ -21,9 +21,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/api"
+	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/observability"
+	"github.com/hyppoliteprn/lyo/internal/user"
 	"github.com/hyppoliteprn/lyo/migrations"
 	"github.com/hyppoliteprn/lyo/pkg/config"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
@@ -52,7 +53,7 @@ func handleRequestError(w http.ResponseWriter, _ *http.Request, err error) {
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "config error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -80,6 +81,7 @@ func main() {
 		logger.Error("migrations source error", "err", err)
 		os.Exit(1)
 	}
+	defer func() { _ = src.Close() }()
 
 	stdDB := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = stdDB.Close() }()
@@ -93,15 +95,18 @@ func main() {
 	// ── Auth & router ─────────────────────────────────────────────────────────
 	authSvc := auth.NewService(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL, cfg.Auth.RefreshTTL)
 
+	userRepo := user.NewRepository(pool)
+	userSvc := user.NewService(userRepo, authSvc)
+
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.Logger(logger))
 	r.Use(middleware.Authenticate(authSvc))
 
-	// Mount generated API routes (stubs — real logic added per feature)
+	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(),
+		api.NewHandlers(userSvc, authSvc, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,
