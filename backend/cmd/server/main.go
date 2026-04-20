@@ -81,7 +81,6 @@ func main() {
 		logger.Error("migrations source error", "err", err)
 		os.Exit(1)
 	}
-	defer func() { _ = src.Close() }()
 
 	stdDB := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = stdDB.Close() }()
