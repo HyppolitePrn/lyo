@@ -11,14 +11,20 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/user"
 )
 
+// UserService is the subset of user.Service consumed by the HTTP handlers.
+type UserService interface {
+	Register(ctx context.Context, username, email, password string) (auth.TokenPair, error)
+	Login(ctx context.Context, email, password string) (auth.TokenPair, error)
+}
+
 // Handlers implements StrictServerInterface. Dependencies are injected feature by feature.
 type Handlers struct {
-	userSvc *user.Service
+	userSvc UserService
 	authSvc *auth.Service
 	logger  *slog.Logger
 }
 
-func NewHandlers(userSvc *user.Service, authSvc *auth.Service, logger *slog.Logger) *Handlers {
+func NewHandlers(userSvc UserService, authSvc *auth.Service, logger *slog.Logger) *Handlers {
 	return &Handlers{userSvc: userSvc, authSvc: authSvc, logger: logger}
 }
 
