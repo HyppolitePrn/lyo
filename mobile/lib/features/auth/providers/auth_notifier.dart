@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../services/auth_service.dart';
 
-final _apiClientProvider = Provider<ApiClient>((_) => const ApiClient());
+final apiClientProvider = Provider<ApiClient>((_) => const ApiClient());
 
 final _authServiceProvider = Provider<AuthService>(
-  (ref) => AuthService(ref.watch(_apiClientProvider)),
+  (ref) => AuthService(ref.watch(apiClientProvider)),
 );
 
 class AuthState {
@@ -65,15 +65,12 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<bool> register(
+    String username,
     String email,
     String password,
-    String firstName,
-    String lastName,
   ) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final username =
-          '${firstName.trim().toLowerCase()}${lastName.trim().toLowerCase()}';
       await _svc.register(username, email, password);
       state = state.copyWith(isLoading: false, isAuthenticated: true);
       return true;

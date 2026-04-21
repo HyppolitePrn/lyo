@@ -19,16 +19,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   bool _agreed = false;
 
   static final _emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
+  static final _usernameRegex = RegExp(r'^[a-zA-Z0-9_]{3,30}$');
 
   bool get _canSubmit =>
       _firstNameCtrl.text.trim().isNotEmpty &&
       _lastNameCtrl.text.trim().isNotEmpty &&
+      _usernameCtrl.text.trim().isNotEmpty &&
       _emailCtrl.text.trim().isNotEmpty &&
       _passwordCtrl.text.length >= 8 &&
       _confirmCtrl.text == _passwordCtrl.text &&
@@ -40,6 +43,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     for (final ctrl in [
       _firstNameCtrl,
       _lastNameCtrl,
+      _usernameCtrl,
       _emailCtrl,
       _passwordCtrl,
       _confirmCtrl,
@@ -52,6 +56,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   void dispose() {
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
@@ -61,10 +66,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final success = await ref.read(authNotifierProvider.notifier).register(
+          _usernameCtrl.text.trim(),
           _emailCtrl.text.trim(),
           _passwordCtrl.text,
-          _firstNameCtrl.text.trim(),
-          _lastNameCtrl.text.trim(),
         );
     if (mounted && success) context.go('/home');
   }
@@ -133,6 +137,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 14),
+                LyoTextField(
+                  controller: _usernameCtrl,
+                  hint: 'Username',
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.username],
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Username is required';
+                    if (!_usernameRegex.hasMatch(v)) {
+                      return '3–30 characters, letters, numbers or _';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 14),
                 LyoTextField(
