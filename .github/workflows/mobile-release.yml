@@ -48,11 +48,11 @@ jobs:
 
       - name: Build signed release APK
         working-directory: mobile
-        run: flutter build apk --release --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }}
+        run: flutter build apk --release --dart-define=API_BASE_URL=${{ secrets.VPS_URL }}
 
       - name: Build signed release AAB
         working-directory: mobile
-        run: flutter build appbundle --release --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }}
+        run: flutter build appbundle --release --dart-define=API_BASE_URL=${{ secrets.VPS_URL }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
