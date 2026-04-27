@@ -24,7 +24,9 @@ import (
 
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/observability"
+	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/user"
 	"github.com/hyppoliteprn/lyo/migrations"
 	"github.com/hyppoliteprn/lyo/pkg/config"
@@ -102,6 +104,12 @@ func main() {
 	userRepo := user.NewRepository(pool)
 	userSvc := user.NewService(userRepo, authSvc)
 
+	featRepo := features.NewRepository(pool)
+	featSvc := features.NewService(featRepo)
+
+	streamRepo := streaming.NewRepository(pool)
+	streamSvc := streaming.NewService(streamRepo, cfg.Stream.BufferSize, logger)
+
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
@@ -117,7 +125,7 @@ func main() {
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,
@@ -125,6 +133,10 @@ func main() {
 		},
 	)
 	api.HandlerFromMux(strict, r)
+
+	// WebSocket audio ingest (out-of-band, not in OpenAPI spec)
+	ingestH := streaming.NewIngestHandler(streamSvc, authSvc, logger)
+	r.Get("/streams/{id}/ingest", ingestH.ServeHTTP)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
