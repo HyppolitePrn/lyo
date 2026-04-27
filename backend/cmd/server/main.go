@@ -17,7 +17,6 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/golang-migrate/migrate/v4"
 	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
-	migratesource "github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -83,16 +82,10 @@ func main() {
 	defer pool.Close()
 
 	// ── Auto-migrate ─────────────────────────────────────────────────────────
-	src, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		logger.Error("migrations source error", "err", err)
-		os.Exit(1)
-	}
-
 	stdDB := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = stdDB.Close() }()
 
-	if err := runMigrations(stdDB, src); err != nil {
+	if err := runMigrations(stdDB); err != nil {
 		logger.Error("migration failed", "err", err)
 		os.Exit(1)
 	}
@@ -134,9 +127,12 @@ func main() {
 	)
 	api.HandlerFromMux(strict, r)
 
-	// WebSocket audio ingest (out-of-band, not in OpenAPI spec)
+	// WebSocket endpoints (out-of-band, not in OpenAPI spec)
 	ingestH := streaming.NewIngestHandler(streamSvc, authSvc, logger)
 	r.Get("/streams/{id}/ingest", ingestH.ServeHTTP)
+
+	listenH := streaming.NewListenHandler(streamSvc, authSvc, logger)
+	r.Get("/streams/{id}/listen", listenH.ServeHTTP)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
@@ -167,24 +163,25 @@ func main() {
 	}
 }
 
-func runMigrations(db *sql.DB, src migratesource.Driver) error {
+func runMigrations(db *sql.DB) error {
+	src, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return fmt.Errorf("migrations source: %w", err)
+	}
 	driver, err := migratepostgres.WithInstance(db, &migratepostgres.Config{})
 	if err != nil {
+		_ = src.Close()
 		return fmt.Errorf("migrate driver: %w", err)
 	}
 	m, err := migrate.NewWithInstance("iofs", src, "postgres", driver)
 	if err != nil {
+		_ = src.Close()
 		return fmt.Errorf("migrate init: %w", err)
 	}
+	// m.Close() closes both src and driver.
+	defer func() { _, _ = m.Close() }()
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
-	}
-	srcErr, dbErr := m.Close()
-	if srcErr != nil {
-		return fmt.Errorf("migrate close source: %w", srcErr)
-	}
-	if dbErr != nil {
-		return fmt.Errorf("migrate close db: %w", dbErr)
 	}
 	return nil
 }
