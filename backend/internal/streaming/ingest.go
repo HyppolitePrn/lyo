@@ -1,12 +1,13 @@
 package streaming
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/coder/websocket"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
@@ -87,16 +88,32 @@ func (h *IngestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.String("stream_id", streamID), slog.Any("err", err))
 		return
 	}
-	defer conn.CloseNow() //nolint:errcheck
+	defer func() {
+		if err := conn.CloseNow(); err != nil {
+			h.logger.WarnContext(ctx, "websocket close error", slog.Any("err", err))
+		}
+	}()
 
 	conn.SetReadLimit(maxChunkBytes)
+
+	// Derive a context that is cancelled when either the client disconnects
+	// or EndStream is called (hub.Done() fires), whichever comes first.
+	loopCtx, loopCancel := context.WithCancel(ctx)
+	defer loopCancel()
+	go func() {
+		select {
+		case <-hub.Done():
+			loopCancel()
+		case <-loopCtx.Done():
+		}
+	}()
 
 	h.logger.Info("broadcaster connected",
 		slog.String("stream_id", streamID),
 		slog.String("broadcaster_id", claims.UserID))
 
 	for {
-		msgType, data, err := conn.Read(ctx)
+		msgType, data, err := conn.Read(loopCtx)
 		if err != nil {
 			h.logger.Info("broadcaster disconnected",
 				slog.String("stream_id", streamID),
@@ -106,6 +123,6 @@ func (h *IngestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if msgType != websocket.MessageBinary {
 			continue // ignore text frames
 		}
-		hub.Broadcast(ctx, Chunk(data))
+		hub.Broadcast(loopCtx, data)
 	}
 }

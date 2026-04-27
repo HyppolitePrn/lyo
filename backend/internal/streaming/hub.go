@@ -14,19 +14,30 @@ type Chunk []byte
 
 // Hub multiplexes one audio source to N concurrent listeners.
 type Hub struct {
-	mu          sync.RWMutex
-	listeners   map[string]chan Chunk
-	bufferSize  int
-	logger      *slog.Logger
+	ctx        context.Context
+	cancel     context.CancelFunc
+	mu         sync.RWMutex
+	listeners  map[string]chan Chunk
+	bufferSize int
+	logger     *slog.Logger
 }
 
 func NewHub(bufferSize int, logger *slog.Logger) *Hub {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Hub{
+		ctx:        ctx,
+		cancel:     cancel,
 		listeners:  make(map[string]chan Chunk),
 		bufferSize: bufferSize,
 		logger:     logger,
 	}
 }
+
+// Close cancels the hub's context, signalling all ingest loops to stop.
+func (h *Hub) Close() { h.cancel() }
+
+// Done returns a channel that is closed when the hub is shut down.
+func (h *Hub) Done() <-chan struct{} { return h.ctx.Done() }
 
 // Subscribe registers a listener and returns its read channel.
 // The caller must call Unsubscribe when done to prevent goroutine leaks.

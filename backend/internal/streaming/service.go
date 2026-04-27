@@ -60,7 +60,10 @@ func (s *Service) EndStream(ctx context.Context, id, broadcasterID string) (*Str
 	}
 
 	s.mu.Lock()
-	delete(s.hubs, id)
+	if hub, ok := s.hubs[id]; ok {
+		hub.Close()
+		delete(s.hubs, id)
+	}
 	s.mu.Unlock()
 
 	s.logger.Info("stream ended", slog.String("stream_id", id))

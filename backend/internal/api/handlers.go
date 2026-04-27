@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -54,10 +55,18 @@ func NewHandlers(userSvc UserService, authSvc *auth.Service, streamSvc StreamSer
 	}
 }
 
-func streamToAPI(s *streaming.Stream) Stream {
+func streamToAPI(s *streaming.Stream) (Stream, error) {
+	id, err := uuid.Parse(s.ID)
+	if err != nil {
+		return Stream{}, fmt.Errorf("invalid stream ID %q: %w", s.ID, err)
+	}
+	bcID, err := uuid.Parse(s.BroadcasterID)
+	if err != nil {
+		return Stream{}, fmt.Errorf("invalid broadcaster ID %q: %w", s.BroadcasterID, err)
+	}
 	st := Stream{
-		Id:            openapi_types.UUID(uuid.MustParse(s.ID)),
-		BroadcasterId: openapi_types.UUID(uuid.MustParse(s.BroadcasterID)),
+		Id:            openapi_types.UUID(id),
+		BroadcasterId: openapi_types.UUID(bcID),
 		Title:         s.Title,
 		Status:        StreamStatus(s.Status),
 		StartedAt:     s.StartedAt,
@@ -66,7 +75,7 @@ func streamToAPI(s *streaming.Stream) Stream {
 		st.Description = &s.Description
 	}
 	st.EndedAt = s.EndedAt
-	return st
+	return st, nil
 }
 
 func (h *Handlers) GetHealth(_ context.Context, _ GetHealthRequestObject) (GetHealthResponseObject, error) {
@@ -212,7 +221,11 @@ func (h *Handlers) ListStreams(ctx context.Context, _ ListStreamsRequestObject) 
 
 	items := make([]Stream, 0, len(streams))
 	for i := range streams {
-		items = append(items, streamToAPI(&streams[i]))
+		item, err := streamToAPI(&streams[i])
+		if err != nil {
+			return nil, fmt.Errorf("marshal stream: %w", err)
+		}
+		items = append(items, item)
 	}
 	return ListStreams200JSONResponse{Items: items}, nil
 }
@@ -249,7 +262,11 @@ func (h *Handlers) CreateStream(ctx context.Context, req CreateStreamRequestObje
 		return nil, err
 	}
 
-	return CreateStream201JSONResponse(streamToAPI(stream)), nil
+	apiStream, err := streamToAPI(stream)
+	if err != nil {
+		return nil, fmt.Errorf("marshal stream: %w", err)
+	}
+	return CreateStream201JSONResponse(apiStream), nil
 }
 
 func (h *Handlers) GetStream(ctx context.Context, req GetStreamRequestObject) (GetStreamResponseObject, error) {
@@ -270,7 +287,11 @@ func (h *Handlers) GetStream(ctx context.Context, req GetStreamRequestObject) (G
 		return nil, err
 	}
 
-	return GetStream200JSONResponse(streamToAPI(stream)), nil
+	apiStream, err := streamToAPI(stream)
+	if err != nil {
+		return nil, fmt.Errorf("marshal stream: %w", err)
+	}
+	return GetStream200JSONResponse(apiStream), nil
 }
 
 func (h *Handlers) DeleteStream(ctx context.Context, req DeleteStreamRequestObject) (DeleteStreamResponseObject, error) {

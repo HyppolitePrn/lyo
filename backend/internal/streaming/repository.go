@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -55,7 +56,15 @@ func (r *pgStreamRepo) Create(ctx context.Context, broadcasterID, title, descrip
 		INSERT INTO streams (broadcaster_id, title, description)
 		VALUES ($1, $2, $3)
 		RETURNING id, broadcaster_id, title, description, status, started_at, ended_at`
-	return scanStream(r.pool.QueryRow(ctx, q, broadcasterID, title, description))
+	s, err := scanStream(r.pool.QueryRow(ctx, q, broadcasterID, title, description))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrAlreadyLive
+		}
+		return nil, err
+	}
+	return s, nil
 }
 
 func (r *pgStreamRepo) Get(ctx context.Context, id string) (*Stream, error) {
