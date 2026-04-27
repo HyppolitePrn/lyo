@@ -17,6 +17,7 @@ import (
 
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/user"
 )
 
@@ -37,10 +38,31 @@ func newTestAuthSvc() *auth.Service {
 	return auth.NewService("test-jwt-secret-at-least-32-chars!", time.Minute, time.Hour)
 }
 
+// nopStreamSvc satisfies api.StreamService for tests that don't exercise streaming.
+type nopStreamSvc struct{}
+
+func (nopStreamSvc) StartStream(_ context.Context, _, _, _ string) (*streaming.Stream, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopStreamSvc) EndStream(_ context.Context, _, _ string) (*streaming.Stream, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopStreamSvc) GetStream(_ context.Context, _ string) (*streaming.Stream, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopStreamSvc) ListLiveStreams(_ context.Context) ([]streaming.Stream, error) {
+	return nil, errors.New("not implemented")
+}
+
+// nopFeatureSvc satisfies api.FeatureService for tests that don't exercise feature flags.
+type nopFeatureSvc struct{}
+
+func (nopFeatureSvc) IsEnabled(_ context.Context, _ string) bool { return true }
+
 func newTestRouter(userSvc api.UserService, authSvc *auth.Service) http.Handler {
 	r := chi.NewRouter()
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {

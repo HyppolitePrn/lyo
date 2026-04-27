@@ -14,19 +14,30 @@ type Chunk []byte
 
 // Hub multiplexes one audio source to N concurrent listeners.
 type Hub struct {
-	mu          sync.RWMutex
-	listeners   map[string]chan Chunk
-	bufferSize  int
-	logger      *slog.Logger
+	ctx        context.Context
+	cancel     context.CancelFunc
+	mu         sync.RWMutex
+	listeners  map[string]chan Chunk
+	bufferSize int
+	logger     *slog.Logger
 }
 
 func NewHub(bufferSize int, logger *slog.Logger) *Hub {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Hub{
+		ctx:        ctx,
+		cancel:     cancel,
 		listeners:  make(map[string]chan Chunk),
 		bufferSize: bufferSize,
 		logger:     logger,
 	}
 }
+
+// Close cancels the hub's context, signalling all ingest loops to stop.
+func (h *Hub) Close() { h.cancel() }
+
+// Done returns a channel that is closed when the hub is shut down.
+func (h *Hub) Done() <-chan struct{} { return h.ctx.Done() }
 
 // Subscribe registers a listener and returns its read channel.
 // The caller must call Unsubscribe when done to prevent goroutine leaks.
@@ -52,21 +63,44 @@ func (h *Hub) Unsubscribe(listenerID string) {
 		slog.Int("total", h.count()))
 }
 
-// Broadcast sends a chunk to all active listeners.
-// Slow listeners whose buffer is full are dropped (non-blocking send).
+// shardSize is the number of listeners handled by each goroutine during broadcast.
+const shardSize = 100
+
+// Broadcast fans out a chunk to all active listeners in parallel shards.
+// One goroutine is spawned per shardSize listeners. The RLock is held until
+// all goroutines finish, preventing Unsubscribe from closing channels mid-send.
 func (h *Hub) Broadcast(ctx context.Context, chunk Chunk) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	for id, ch := range h.listeners {
-		select {
-		case ch <- chunk:
-		case <-ctx.Done():
-			return
-		default:
-			h.logger.Warn("listener buffer full, dropping chunk",
-				slog.String("listener_id", id))
-		}
+
+	type entry struct {
+		id string
+		ch chan Chunk
 	}
+	entries := make([]entry, 0, len(h.listeners))
+	for id, ch := range h.listeners {
+		entries = append(entries, entry{id, ch})
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(entries); i += shardSize {
+		batch := entries[i:min(i+shardSize, len(entries))]
+		wg.Add(1)
+		go func(b []entry) {
+			defer wg.Done()
+			for _, e := range b {
+				select {
+				case e.ch <- chunk:
+				case <-ctx.Done():
+					return
+				default:
+					h.logger.Warn("listener buffer full, dropping chunk",
+						slog.String("listener_id", e.id))
+				}
+			}
+		}(batch)
+	}
+	wg.Wait()
 }
 
 // ListenerCount returns the number of currently active listeners.
