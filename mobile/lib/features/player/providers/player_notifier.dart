@@ -128,12 +128,16 @@ class PlayerNotifier extends Notifier<PlayerState> {
         onError: (_) => _onWsDone(),
       );
 
-      // Start just_audio with the WebSocket source.
-      _player = AudioPlayer();
-      await _player!.setAudioSource(_WsAudioSource(_byteController!.stream));
-      await _player!.play();
-
+      // Transition to playing immediately — setAudioSource/play() can hang
+      // waiting to buffer on a live stream, freezing the UI in "connecting".
       state = state.copyWith(status: PlayerStatus.playing, stream: liveStream);
+
+      _player = AudioPlayer();
+      // Fire-and-forget: audio setup runs in the background without blocking state.
+      _player!
+          .setAudioSource(_WsAudioSource(_byteController!.stream))
+          .then((_) => _player?.play())
+          .catchError((_) {});
     } on ApiException catch (e) {
       state =
           state.copyWith(status: PlayerStatus.error, error: e.message);

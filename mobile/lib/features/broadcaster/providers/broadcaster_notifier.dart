@@ -152,16 +152,18 @@ class BroadcasterNotifier extends Notifier<BroadcasterState> {
     await _micSub?.cancel();
     _micSub = null;
     await _recorder.stop();
-    await _channel?.sink.close();
+
+    // Close the WebSocket with a timeout — sink.close() can hang indefinitely
+    // if the server never sends a close frame back (e.g. failed WS upgrade).
+    final sinkClose = _channel?.sink.close();
     _channel = null;
+    await sinkClose?.timeout(const Duration(seconds: 3), onTimeout: () {});
 
     if (streamId != null) {
       try {
         final token = ref.read(authNotifierProvider).accessToken ?? '';
         await _svc.endStream(streamId, token);
-      } catch (_) {
-        // Best-effort: server will mark stream ended when WS closes.
-      }
+      } catch (_) {}
     }
   }
 
