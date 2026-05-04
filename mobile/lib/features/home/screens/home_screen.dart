@@ -4,37 +4,28 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../player/providers/player_notifier.dart';
 import '../models/home_models.dart';
 import '../providers/home_notifier.dart';
+import '../providers/live_streams_provider.dart';
 import '../widgets/live_eq_widget.dart';
 import '../widgets/lyo_artwork_tile.dart';
 import '../widgets/mini_player.dart';
 
-// ── Hardcoded mock data ───────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const _liveShows = [
-  LyoLiveShow(
-    id: 'show-1',
-    title: 'Morning Pulse',
-    host: 'DJ Alex',
-    listeners: 1842,
-    colors: [Color(0xFF0D1F3D), Color(0xFF1B4F8A)],
-  ),
-  LyoLiveShow(
-    id: 'show-2',
-    title: 'Tech Horizons',
-    host: 'Sarah Kim',
-    listeners: 734,
-    colors: [Color(0xFF1A0D3D), Color(0xFF4A2090)],
-  ),
-  LyoLiveShow(
-    id: 'show-3',
-    title: 'Jazz & Stories',
-    host: 'Marcus Cole',
-    listeners: 2301,
-    colors: [Color(0xFF1A2A0D), Color(0xFF3D6B1A)],
-  ),
+const _streamPalettes = [
+  [Color(0xFF0D1F3D), Color(0xFF1B4F8A)],
+  [Color(0xFF1A0D3D), Color(0xFF4A2090)],
+  [Color(0xFF1A2A0D), Color(0xFF3D6B1A)],
+  [Color(0xFF3D1A0A), Color(0xFF6B3320)],
+  [Color(0xFF0A1A3D), Color(0xFF203D7A)],
 ];
+
+List<Color> _streamColors(String id) {
+  final idx = id.codeUnits.fold(0, (a, b) => a + b) % _streamPalettes.length;
+  return _streamPalettes[idx];
+}
 
 const _episodes = [
   LyoEpisode(
@@ -138,7 +129,10 @@ class HomeScreen extends ConsumerWidget {
                   }
                 },
                 onToggle: notifier.togglePlayPause,
-                onDismiss: notifier.dismissMiniPlayer,
+                onDismiss: () {
+                  ref.read(playerNotifierProvider.notifier).disconnect();
+                  notifier.dismissMiniPlayer();
+                },
               ),
             ),
         ],
@@ -215,26 +209,25 @@ class HomeScreen extends ConsumerWidget {
         return _StubBody(
             label: 'Profile', icon: Icons.person, dark: dark);
       default:
-        return _HomeBody(dark: dark, notifier: notifier);
+        return _HomeBody(dark: dark);
     }
   }
 }
 
 // ── Home tab body ─────────────────────────────────────────────────────────────
 
-class _HomeBody extends StatelessWidget {
-  const _HomeBody({required this.dark, required this.notifier});
+class _HomeBody extends ConsumerWidget {
+  const _HomeBody({required this.dark});
   final bool dark;
-  final HomeNotifier notifier;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return SafeArea(
       child: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(context)),
-          SliverToBoxAdapter(child: _buildLiveNow(context)),
-          SliverToBoxAdapter(child: _buildRecentEpisodes(context)),
+          SliverToBoxAdapter(child: _buildLiveNow(context, ref)),
+          SliverToBoxAdapter(child: _buildRecentEpisodes(context, ref)),
           SliverToBoxAdapter(child: _buildExplore(context)),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
@@ -310,14 +303,72 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  Widget _buildLiveNow(BuildContext context) {
+  Widget _buildLiveNow(BuildContext context, WidgetRef ref) {
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
+    final textSub = dark ? lyoSubDark : lyoSubLight;
+    final notifier = ref.read(homeNotifierProvider.notifier);
+    final asyncStreams = ref.watch(liveStreamsProvider);
+
+    Widget listContent = asyncStreams.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: lyoAccent, strokeWidth: 2),
+      ),
+      error: (e, _) => Center(
+        child: Text(
+          'Could not load streams',
+          style: TextStyle(color: textSub, fontSize: lyoCaption),
+        ),
+      ),
+      data: (streams) {
+        if (streams.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.radio,
+                    size: 32, color: lyoAccent.withValues(alpha: 0.35)),
+                const SizedBox(height: 8),
+                Text(
+                  'No live streams right now',
+                  style: TextStyle(color: textSub, fontSize: lyoCaption),
+                ),
+              ],
+            ),
+          );
+        }
+        return ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          itemCount: streams.length,
+          separatorBuilder: (context, index) => const SizedBox(width: 12),
+          itemBuilder: (context, i) {
+            final s = streams[i];
+            final show = LyoLiveShow(
+              id: s.id,
+              title: s.title,
+              host: s.description?.isNotEmpty == true
+                  ? s.description!
+                  : 'Live broadcast',
+              listeners: 0,
+              colors: _streamColors(s.id),
+            );
+            return _LiveShowCard(
+              show: show,
+              onTap: () {
+                notifier.openLiveStream(s);
+                context.push('/player/${s.id}');
+              },
+            );
+          },
+        );
+      },
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+          padding: const EdgeInsets.fromLTRB(20, 20, 8, 14),
           child: Row(
             children: [
               Container(
@@ -344,30 +395,24 @@ class _HomeBody extends StatelessWidget {
                   color: textPrimary,
                 ),
               ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(Icons.refresh,
+                    size: 18, color: dark ? lyoSubDark : lyoSubLight),
+                tooltip: 'Refresh',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => ref.invalidate(liveStreamsProvider),
+              ),
             ],
           ),
         ),
-        SizedBox(
-          height: 170,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: _liveShows.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, i) => _LiveShowCard(
-              show: _liveShows[i],
-              onTap: () {
-                notifier.openLivePlayer(_liveShows[i]);
-                context.push('/live-player/${_liveShows[i].id}');
-              },
-            ),
-          ),
-        ),
+        SizedBox(height: 170, child: listContent),
       ],
     );
   }
 
-  Widget _buildRecentEpisodes(BuildContext context) {
+  Widget _buildRecentEpisodes(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(homeNotifierProvider.notifier);
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
     final textSub = dark ? lyoSubDark : lyoSubLight;
     final border = dark ? lyoBorderDark : lyoBorderLight;
