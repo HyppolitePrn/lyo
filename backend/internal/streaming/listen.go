@@ -32,24 +32,20 @@ func (h *ListenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Global Authenticate middleware handles Authorization header.
 	// Fall back to ?token= query param for clients that cannot set WS headers.
+	// If no token is present at all, proceed as anonymous — listening is public.
 	claims, ok := middleware.ClaimsFromContext(ctx)
 	if !ok {
 		token := r.URL.Query().Get("token")
-		if token == "" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+		if token != "" {
+			var err error
+			claims, err = h.auth.Verify(token)
+			if err != nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		} else {
+			claims = &auth.Claims{Role: auth.RoleAnonymous}
 		}
-		var err error
-		claims, err = h.auth.Verify(token)
-		if err != nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-	}
-
-	if !claims.Role.AtLeast(auth.RoleUser) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
 	}
 
 	stream, err := h.svc.GetStream(ctx, streamID)
