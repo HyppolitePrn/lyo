@@ -69,7 +69,14 @@ class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
   @override
   Widget build(BuildContext context) {
     final flags = ref.watch(featureFlagsProvider);
-    if (!flags.isEnabled('live_streaming')) return const SizedBox.shrink();
+    if (!flags.isEnabled('live_streaming')) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Go Live')),
+        body: const Center(
+          child: Text('Live streaming is not available right now.'),
+        ),
+      );
+    }
 
     final broadcaster = ref.watch(broadcasterNotifierProvider);
     final dark = Theme.of(context).brightness == Brightness.dark;

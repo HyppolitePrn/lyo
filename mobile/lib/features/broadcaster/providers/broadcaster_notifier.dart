@@ -144,8 +144,12 @@ class BroadcasterNotifier extends Notifier<BroadcasterState> {
   }
 
   void _onMicDone() {
-    _cleanup(null);
-    state = state.copyWith(status: BroadcasterStatus.idle, clearStream: true);
+    _cleanup(null).then((_) {
+      if (state.status != BroadcasterStatus.idle) {
+        state =
+            state.copyWith(status: BroadcasterStatus.idle, clearStream: true);
+      }
+    });
   }
 
   Future<void> _cleanup(String? streamId) async {

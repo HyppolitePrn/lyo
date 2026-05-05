@@ -23,7 +23,7 @@ class ApiException implements Exception {
 
 Map<String, String> _authHeaders(String? token) => {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (token?.isNotEmpty == true) 'Authorization': 'Bearer $token',
     };
 
 String _extractError(dynamic decoded, int statusCode) {
@@ -116,7 +116,7 @@ class ApiClient {
   // WebSocket URL with token passed as query param (headers unsupported on WS upgrade).
   Uri wsUri(String path, {String? token}) {
     final base = '$_wsBase$path';
-    if (token == null) return Uri.parse(base);
-    return Uri.parse('$base?token=${Uri.encodeQueryComponent(token)}');
+    if (token?.isNotEmpty != true) return Uri.parse(base);
+    return Uri.parse('$base?token=${Uri.encodeQueryComponent(token!)}');
   }
 }

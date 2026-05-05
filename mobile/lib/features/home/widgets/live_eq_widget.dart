@@ -13,7 +13,8 @@ class LiveEQWidget extends StatefulWidget {
   State<LiveEQWidget> createState() => _LiveEQWidgetState();
 }
 
-class _LiveEQWidgetState extends State<LiveEQWidget> {
+class _LiveEQWidgetState extends State<LiveEQWidget>
+    with WidgetsBindingObserver {
   final _rng = Random();
   List<double> _heights = [0.6, 0.3, 0.8, 0.4];
   Timer? _timer;
@@ -21,6 +22,7 @@ class _LiveEQWidgetState extends State<LiveEQWidget> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.isPlaying) _start();
   }
 
@@ -34,7 +36,17 @@ class _LiveEQWidgetState extends State<LiveEQWidget> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed && widget.isPlaying) {
+      _start();
+    } else if (lifecycleState != AppLifecycleState.resumed) {
+      _stop();
+    }
+  }
+
   void _start() {
+    if (_timer != null) return;
     _timer = Timer.periodic(const Duration(milliseconds: 160), (_) {
       if (mounted) {
         setState(() {
@@ -52,6 +64,7 @@ class _LiveEQWidgetState extends State<LiveEQWidget> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _stop();
     super.dispose();
   }

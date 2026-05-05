@@ -26,7 +26,7 @@ class _WsAudioSource extends StreamAudioSource {
     return StreamAudioResponse(
       sourceLength: null,
       contentLength: null,
-      offset: 0,
+      offset: start ?? 0,
       stream: _stream,
       contentType: 'audio/aac',
     );
@@ -137,7 +137,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _player!
           .setAudioSource(_WsAudioSource(_byteController!.stream))
           .then((_) => _player?.play())
-          .catchError((_) {});
+          .catchError((Object e) {
+        state = state.copyWith(
+            status: PlayerStatus.error, error: 'Playback failed. Try again.');
+        _cleanup();
+      });
     } on ApiException catch (e) {
       state =
           state.copyWith(status: PlayerStatus.error, error: e.message);
@@ -151,8 +155,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   void _onWsDone() {
     // Stream ended server-side — return to idle gracefully.
-    _cleanup();
-    state = state.copyWith(status: PlayerStatus.idle, clearError: true);
+    _cleanup().then((_) {
+      if (state.status != PlayerStatus.idle) {
+        state = state.copyWith(status: PlayerStatus.idle, clearError: true);
+      }
+    });
   }
 
   Future<void> disconnect() async {
@@ -163,8 +170,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> _cleanup() async {
     await _wsSub?.cancel();
     _wsSub = null;
-    await _channel?.sink.close();
+    final sinkClose = _channel?.sink.close();
     _channel = null;
+    await sinkClose?.timeout(const Duration(seconds: 3), onTimeout: () {});
     await _byteController?.close();
     _byteController = null;
     await _player?.stop();
