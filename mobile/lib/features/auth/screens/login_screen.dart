@@ -30,11 +30,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
     final success = await ref
         .read(authNotifierProvider.notifier)
         .signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
-    if (mounted && success) context.go('/home');
+    if (mounted && success) {
+      context.go('/home');
+    }
   }
 
   @override
@@ -87,8 +91,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   textInputAction: TextInputAction.next,
                   autofillHints: const [AutofillHints.email],
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Email is required';
-                    if (!_emailRegex.hasMatch(v)) return 'Enter a valid email';
+                    if (v == null || v.isEmpty) {
+                      return 'Email is required';
+                    }
+                    if (!_emailRegex.hasMatch(v)) {
+                      return 'Enter a valid email';
+                    }
                     return null;
                   },
                 ),
@@ -101,8 +109,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   autofillHints: const [AutofillHints.password],
                   onFieldSubmitted: (_) => _submit(),
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Password is required';
-                    if (v.length < 8) return 'At least 8 characters';
+                    if (v == null || v.isEmpty) {
+                      return 'Password is required';
+                    }
+                    if (v.length < 8) {
+                      return 'At least 8 characters';
+                    }
                     return null;
                   },
                 ),

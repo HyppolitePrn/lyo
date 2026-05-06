@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/lyo_tokens.dart';
 
 class LiveEQWidget extends StatefulWidget {
-  const LiveEQWidget({super.key, required this.isPlaying});
+  const LiveEQWidget({required this.isPlaying, super.key});
   final bool isPlaying;
 
   @override
@@ -23,7 +23,9 @@ class _LiveEQWidgetState extends State<LiveEQWidget>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    if (widget.isPlaying) _start();
+    if (widget.isPlaying) {
+      _start();
+    }
   }
 
   @override
@@ -46,7 +48,9 @@ class _LiveEQWidgetState extends State<LiveEQWidget>
   }
 
   void _start() {
-    if (_timer != null) return;
+    if (_timer != null) {
+      return;
+    }
     _timer = Timer.periodic(const Duration(milliseconds: 160), (_) {
       if (mounted) {
         setState(() {

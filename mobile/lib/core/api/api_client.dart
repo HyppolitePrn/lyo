@@ -116,7 +116,9 @@ class ApiClient {
   // WebSocket URL with token passed as query param (headers unsupported on WS upgrade).
   Uri wsUri(String path, {String? token}) {
     final base = '$_wsBase$path';
-    if (token?.isNotEmpty != true) return Uri.parse(base);
+    if (token?.isNotEmpty != true) {
+      return Uri.parse(base);
+    }
     return Uri.parse('$base?token=${Uri.encodeQueryComponent(token!)}');
   }
 }

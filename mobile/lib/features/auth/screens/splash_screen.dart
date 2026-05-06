@@ -17,9 +17,9 @@ class SplashScreen extends ConsumerWidget {
       body: Stack(
         children: [
           // Radial gradient overlays
-          Positioned.fill(
+          const Positioned.fill(
             child: DecoratedBox(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: RadialGradient(
                   center: Alignment(0.2, -0.4),
                   radius: 0.8,
@@ -28,9 +28,9 @@ class SplashScreen extends ConsumerWidget {
               ),
             ),
           ),
-          Positioned.fill(
+          const Positioned.fill(
             child: DecoratedBox(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: RadialGradient(
                   center: Alignment(-0.6, 0.6),
                   radius: 0.6,
@@ -110,7 +110,7 @@ class _LogoRow extends StatelessWidget {
 class _ArtworkCollage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return const SizedBox(
       height: 210,
       child: Stack(
         clipBehavior: Clip.none,
@@ -123,7 +123,7 @@ class _ArtworkCollage extends StatelessWidget {
               height: 120,
               radius: 18,
               angle: -6 * math.pi / 180,
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [Color(0xFF1A2A3D), Color(0xFF0D4F6B)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -141,7 +141,7 @@ class _ArtworkCollage extends StatelessWidget {
                 height: 140,
                 radius: 18,
                 angle: 2 * math.pi / 180,
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [Color(0xFF3D1A0A), Color(0xFF7A3520)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -158,7 +158,7 @@ class _ArtworkCollage extends StatelessWidget {
               height: 110,
               radius: 18,
               angle: 5 * math.pi / 180,
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [Color(0xFF1A1A3D), Color(0xFF3D2070)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -174,7 +174,7 @@ class _ArtworkCollage extends StatelessWidget {
               height: 90,
               radius: 14,
               angle: -3 * math.pi / 180,
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [Color(0xFF1A3D1A), Color(0xFF1F6B2E)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -189,7 +189,7 @@ class _ArtworkCollage extends StatelessWidget {
               height: 80,
               radius: 14,
               angle: 4 * math.pi / 180,
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [Color(0xFF3D2D1A), Color(0xFF6B4A20)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,

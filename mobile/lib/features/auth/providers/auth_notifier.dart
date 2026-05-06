@@ -9,11 +9,17 @@ import '../services/auth_service.dart';
 String? _jwtRole(String token) {
   try {
     final parts = token.split('.');
-    if (parts.length != 3) return null;
+    if (parts.length != 3) {
+      return null;
+    }
     var payload = parts[1];
     final mod = payload.length % 4;
-    if (mod == 2) payload += '==';
-    if (mod == 3) payload += '=';
+    if (mod == 2) {
+      payload += '==';
+    }
+    if (mod == 3) {
+      payload += '=';
+    }
     final decoded =
         jsonDecode(utf8.decode(base64Url.decode(payload))) as Map<String, dynamic>;
     return decoded['role'] as String?;

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/lyo_tokens.dart';
 
 class RecordedPlayerScreen extends StatelessWidget {
-  const RecordedPlayerScreen({super.key, required this.episodeId});
+  const RecordedPlayerScreen({required this.episodeId, super.key});
   final String episodeId;
 
   @override

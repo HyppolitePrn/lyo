@@ -4,9 +4,7 @@ import '../../../core/theme/lyo_tokens.dart';
 
 class LyoTextField extends StatefulWidget {
   const LyoTextField({
-    super.key,
-    required this.controller,
-    required this.hint,
+    required this.controller, required this.hint, super.key,
     this.label,
     this.obscure = false,
     this.keyboardType,

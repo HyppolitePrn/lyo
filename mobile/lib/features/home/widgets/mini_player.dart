@@ -5,11 +5,7 @@ import 'lyo_artwork_tile.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({
-    super.key,
-    required this.state,
-    required this.onTap,
-    required this.onToggle,
-    required this.onDismiss,
+    required this.state, required this.onTap, required this.onToggle, required this.onDismiss, super.key,
   });
 
   final MiniPlayerState state;
