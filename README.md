@@ -24,13 +24,13 @@ The REST API is OpenAPI-first (`backend/api/openapi.yaml`). Server stubs are gen
 
 | | |
 |---|---|
-| API base URL | `http://167.235.254.103:8080` |
-| Health check | `GET http://167.235.254.103:8080/health` |
+| API base URL | `http://API_IP:8080` |
+| Health check | `GET http://API_IP:8080/health` |
 
 To point the mobile app at the live server:
 
 ```bash
-cd mobile && flutter run --dart-define=API_BASE_URL=http://167.235.254.103:8080
+cd mobile && flutter run --dart-define=API_BASE_URL=http://API_IP:8080
 ```
 
 ---
