@@ -119,10 +119,14 @@ class BroadcasterNotifier extends Notifier<BroadcasterState> {
       );
 
       state = state.copyWith(
-          status: BroadcasterStatus.live, stream: liveStream);
+        status: BroadcasterStatus.live,
+        stream: liveStream,
+      );
     } on ApiException catch (e) {
       state = state.copyWith(
-          status: BroadcasterStatus.error, error: e.message);
+        status: BroadcasterStatus.error,
+        error: e.message,
+      );
       await _cleanup(null);
     } catch (e) {
       state = state.copyWith(
@@ -134,20 +138,27 @@ class BroadcasterNotifier extends Notifier<BroadcasterState> {
   }
 
   Future<void> stopBroadcast() async {
-    if (state.status != BroadcasterStatus.live) return;
+    if (state.status != BroadcasterStatus.live) {
+      return;
+    }
     state = state.copyWith(status: BroadcasterStatus.ending, clearError: true);
 
     final streamId = state.stream?.id;
     await _cleanup(streamId);
     state = state.copyWith(
-        status: BroadcasterStatus.idle, clearStream: true, clearError: true);
+      status: BroadcasterStatus.idle,
+      clearStream: true,
+      clearError: true,
+    );
   }
 
   void _onMicDone() {
     _cleanup(null).then((_) {
       if (state.status != BroadcasterStatus.idle) {
-        state =
-            state.copyWith(status: BroadcasterStatus.idle, clearStream: true);
+        state = state.copyWith(
+          status: BroadcasterStatus.idle,
+          clearStream: true,
+        );
       }
     });
   }

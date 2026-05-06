@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 
 class LyoArtworkTile extends StatelessWidget {
   const LyoArtworkTile({
-    super.key,
-    required this.size,
-    required this.radius,
-    required this.color1,
-    required this.color2,
+    required this.size, required this.radius, required this.color1, required this.color2, super.key,
   });
 
   final double size;

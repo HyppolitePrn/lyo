@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/lyo_tokens.dart';
 
 class AuthErrorBanner extends StatelessWidget {
-  const AuthErrorBanner({super.key, required this.message});
+  const AuthErrorBanner({required this.message, super.key});
 
   final String message;
 

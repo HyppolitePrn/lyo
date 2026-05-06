@@ -64,13 +64,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
     final success = await ref.read(authNotifierProvider.notifier).register(
           _usernameCtrl.text.trim(),
           _emailCtrl.text.trim(),
           _passwordCtrl.text,
         );
-    if (mounted && success) context.go('/home');
+    if (mounted && success) {
+      context.go('/home');
+    }
   }
 
   @override
@@ -145,10 +149,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   textInputAction: TextInputAction.next,
                   autofillHints: const [AutofillHints.username],
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Username is required';
-                    if (!_usernameRegex.hasMatch(v)) {
-                      return '3–30 characters, letters, numbers or _';
-                    }
+                     if (v == null || v.isEmpty) {
+                       return 'Username is required';
+                     }
+                     if (!_usernameRegex.hasMatch(v)) {
+                       return '3–30 characters, letters, numbers or _';
+                     }
                     return null;
                   },
                 ),
@@ -160,8 +166,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   textInputAction: TextInputAction.next,
                   autofillHints: const [AutofillHints.email],
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Email is required';
-                    if (!_emailRegex.hasMatch(v)) return 'Enter a valid email';
+                    if (v == null || v.isEmpty) {
+                      return 'Email is required';
+                    }
+                    if (!_emailRegex.hasMatch(v)) {
+                      return 'Enter a valid email';
+                    }
                     return null;
                   },
                 ),
@@ -173,8 +183,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   textInputAction: TextInputAction.next,
                   autofillHints: const [AutofillHints.newPassword],
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Password is required';
-                    if (v.length < 8) return 'At least 8 characters';
+                    if (v == null || v.isEmpty) {
+                      return 'Password is required';
+                    }
+                    if (v.length < 8) {
+                      return 'At least 8 characters';
+                    }
                     return null;
                   },
                 ),
@@ -187,8 +201,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   autofillHints: const [AutofillHints.newPassword],
                   onFieldSubmitted: (_) => _canSubmit ? _submit() : null,
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Please confirm password';
-                    if (v != _passwordCtrl.text) return 'Passwords do not match';
+                    if (v == null || v.isEmpty) {
+                      return 'Please confirm password';
+                    }
+                    if (v != _passwordCtrl.text) {
+                      return 'Passwords do not match';
+                    }
                     return null;
                   },
                 ),

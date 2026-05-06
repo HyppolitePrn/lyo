@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/lyo_tokens.dart';
 
 class LivePlayerScreen extends StatelessWidget {
-  const LivePlayerScreen({super.key, required this.showId});
+  const LivePlayerScreen({required this.showId, super.key});
   final String showId;
 
   @override

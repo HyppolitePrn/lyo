@@ -5,7 +5,7 @@ import '../../../core/theme/lyo_tokens.dart';
 import '../providers/player_notifier.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
-  const PlayerScreen({super.key, required this.streamId});
+  const PlayerScreen({required this.streamId, super.key});
 
   final String streamId;
 
@@ -187,10 +187,10 @@ class _ControlButton extends StatelessWidget {
       child: Container(
         width: 72,
         height: 72,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: lyoAccent,
           shape: BoxShape.circle,
-          boxShadow: const [lyoCtaGlow],
+          boxShadow: [lyoCtaGlow],
         ),
         child: status == PlayerStatus.connecting
             ? const Padding(

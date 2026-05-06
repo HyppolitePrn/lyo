@@ -34,11 +34,17 @@ class _StreamListScreenState extends ConsumerState<StreamListScreen> {
       final token = ref.read(authNotifierProvider).accessToken ?? '';
       final svc = PlayerService(ref.read(apiClientProvider));
       final streams = await svc.listLive(token);
-      if (mounted) setState(() => _streams = streams);
+      if (mounted) {
+        setState(() => _streams = streams);
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        setState(() => _error = e.toString());
+      }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

@@ -31,7 +31,9 @@ class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
   }
 
   Future<void> _goLive() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
     await ref.read(broadcasterNotifierProvider.notifier).startBroadcast(
           _titleCtrl.text.trim(),
           _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
@@ -48,7 +50,9 @@ class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
 
   void _tickTimer() {
     Future.delayed(const Duration(seconds: 1), () {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       final status = ref.read(broadcasterNotifierProvider).status;
       if (status == BroadcasterStatus.live && _liveStartedAt != null) {
         setState(() {
