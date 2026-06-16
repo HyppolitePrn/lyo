@@ -98,6 +98,7 @@ func main() {
 	userRepo := user.NewRepository(pool)
 	userSvc := user.NewService(userRepo, authSvc)
 	getUserByIDUC := userusecase.NewGetUserByIDUsecase(userRepo)
+	updateUserByIDUC := userusecase.NewUpdateUserByIDUsecase(userRepo)
 
 	featRepo := features.NewRepository(pool)
 	featSvc := features.NewService(featRepo)
@@ -120,7 +121,7 @@ func main() {
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, getUserByIDUC, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, getUserByIDUC, updateUserByIDUC, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,

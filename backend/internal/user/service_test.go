@@ -19,6 +19,7 @@ type mockRepo struct {
 	createFn     func(context.Context, string, string, string, auth.Role) (*user.User, error)
 	getByEmailFn func(context.Context, string) (*user.User, error)
 	getByIDFn    func(context.Context, string) (*user.User, error)
+	updateFn     func(context.Context, string, *string, *string) (*user.User, error)
 }
 
 func (m *mockRepo) Create(ctx context.Context, username, email, passwordHash string, role auth.Role) (*user.User, error) {
@@ -29,6 +30,9 @@ func (m *mockRepo) GetByEmail(ctx context.Context, email string) (*user.User, er
 }
 func (m *mockRepo) GetByID(ctx context.Context, id string) (*user.User, error) {
 	return m.getByIDFn(ctx, id)
+}
+func (m *mockRepo) Update(ctx context.Context, id string, username, email *string) (*user.User, error) {
+	return m.updateFn(ctx, id, username, email)
 }
 
 func newTestAuthSvc() *auth.Service {

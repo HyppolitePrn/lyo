@@ -315,7 +315,7 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         "401": { $ref: '#/components/responses/Unauthorized' }
     patch:
-      operationId: UpdateMe
+      operationId: UpdateUserByID
       summary: Update the authenticated user's profile
       tags: [users]
       security:

@@ -21,6 +21,8 @@ type Repository interface {
 	Create(ctx context.Context, username, email, passwordHash string, role auth.Role) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByID(ctx context.Context, id string) (*User, error)
+	// Update applies a partial update: nil fields are left untouched.
+	Update(ctx context.Context, id string, username, email *string) (*User, error)
 }
 
 type pgRepo struct {
@@ -76,6 +78,28 @@ func (r *pgRepo) GetByID(ctx context.Context, id string) (*User, error) {
 		FROM users WHERE id = $1`
 
 	row := r.pool.QueryRow(ctx, q, id)
+	u, err := scanUser(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return u, err
+}
+
+func (r *pgRepo) Update(ctx context.Context, id string, username, email *string) (*User, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbQueryTimeout)
+	defer cancel()
+
+	const q = `
+		UPDATE users
+		SET username = COALESCE($2, username),
+		    email = COALESCE($3, email),
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, username, email, password_hash, role,
+		          favorite_track_ids, favorite_stream_ids, favorite_playlist_ids,
+		          created_at, updated_at`
+
+	row := r.pool.QueryRow(ctx, q, id, username, email)
 	u, err := scanUser(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

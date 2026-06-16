@@ -287,8 +287,8 @@ type CreateStreamJSONRequestBody = CreateStreamRequest
 // CreateTrackJSONRequestBody defines body for CreateTrack for application/json ContentType.
 type CreateTrackJSONRequestBody = CreateTrackRequest
 
-// UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
-type UpdateMeJSONRequestBody = UpdateUserRequest
+// UpdateUserByIDJSONRequestBody defines body for UpdateUserByID for application/json ContentType.
+type UpdateUserByIDJSONRequestBody = UpdateUserRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -360,7 +360,7 @@ type ServerInterface interface {
 	GetUserByID(w http.ResponseWriter, r *http.Request)
 	// Update the authenticated user's profile
 	// (PATCH /users/me)
-	UpdateMe(w http.ResponseWriter, r *http.Request)
+	UpdateUserByID(w http.ResponseWriter, r *http.Request)
 	// Remove a playlist from favorites
 	// (DELETE /users/me/favorites/playlists/{playlistId})
 	UnfavoritePlaylist(w http.ResponseWriter, r *http.Request, playlistId openapi_types.UUID)
@@ -519,7 +519,7 @@ func (_ Unimplemented) GetUserByID(w http.ResponseWriter, r *http.Request) {
 
 // Update the authenticated user's profile
 // (PATCH /users/me)
-func (_ Unimplemented) UpdateMe(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) UpdateUserByID(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1105,8 +1105,8 @@ func (siw *ServerInterfaceWrapper) GetUserByID(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
-// UpdateMe operation middleware
-func (siw *ServerInterfaceWrapper) UpdateMe(w http.ResponseWriter, r *http.Request) {
+// UpdateUserByID operation middleware
+func (siw *ServerInterfaceWrapper) UpdateUserByID(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
@@ -1115,7 +1115,7 @@ func (siw *ServerInterfaceWrapper) UpdateMe(w http.ResponseWriter, r *http.Reque
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateMe(w, r)
+		siw.Handler.UpdateUserByID(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1491,7 +1491,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/users/me", wrapper.GetUserByID)
 	})
 	r.Group(func(r chi.Router) {
-		r.Patch(options.BaseURL+"/users/me", wrapper.UpdateMe)
+		r.Patch(options.BaseURL+"/users/me", wrapper.UpdateUserByID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/users/me/favorites/playlists/{playlistId}", wrapper.UnfavoritePlaylist)
@@ -2229,37 +2229,37 @@ func (response GetUserByID401JSONResponse) VisitGetUserByIDResponse(w http.Respo
 	return json.NewEncoder(w).Encode(response)
 }
 
-type UpdateMeRequestObject struct {
-	Body *UpdateMeJSONRequestBody
+type UpdateUserByIDRequestObject struct {
+	Body *UpdateUserByIDJSONRequestBody
 }
 
-type UpdateMeResponseObject interface {
-	VisitUpdateMeResponse(w http.ResponseWriter) error
+type UpdateUserByIDResponseObject interface {
+	VisitUpdateUserByIDResponse(w http.ResponseWriter) error
 }
 
-type UpdateMe200JSONResponse User
+type UpdateUserByID200JSONResponse User
 
-func (response UpdateMe200JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+func (response UpdateUserByID200JSONResponse) VisitUpdateUserByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
 
-type UpdateMe401JSONResponse struct{ UnauthorizedJSONResponse }
+type UpdateUserByID401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response UpdateMe401JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+func (response UpdateUserByID401JSONResponse) VisitUpdateUserByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
 
 	return json.NewEncoder(w).Encode(response)
 }
 
-type UpdateMe422JSONResponse struct {
+type UpdateUserByID422JSONResponse struct {
 	UnprocessableEntityJSONResponse
 }
 
-func (response UpdateMe422JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+func (response UpdateUserByID422JSONResponse) VisitUpdateUserByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(422)
 
@@ -2513,7 +2513,7 @@ type StrictServerInterface interface {
 	GetUserByID(ctx context.Context, request GetUserByIDRequestObject) (GetUserByIDResponseObject, error)
 	// Update the authenticated user's profile
 	// (PATCH /users/me)
-	UpdateMe(ctx context.Context, request UpdateMeRequestObject) (UpdateMeResponseObject, error)
+	UpdateUserByID(ctx context.Context, request UpdateUserByIDRequestObject) (UpdateUserByIDResponseObject, error)
 	// Remove a playlist from favorites
 	// (DELETE /users/me/favorites/playlists/{playlistId})
 	UnfavoritePlaylist(ctx context.Context, request UnfavoritePlaylistRequestObject) (UnfavoritePlaylistResponseObject, error)
@@ -3179,11 +3179,11 @@ func (sh *strictHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// UpdateMe operation middleware
-func (sh *strictHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
-	var request UpdateMeRequestObject
+// UpdateUserByID operation middleware
+func (sh *strictHandler) UpdateUserByID(w http.ResponseWriter, r *http.Request) {
+	var request UpdateUserByIDRequestObject
 
-	var body UpdateMeJSONRequestBody
+	var body UpdateUserByIDJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -3191,18 +3191,18 @@ func (sh *strictHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.UpdateMe(ctx, request.(UpdateMeRequestObject))
+		return sh.ssi.UpdateUserByID(ctx, request.(UpdateUserByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "UpdateMe")
+		handler = middleware(handler, "UpdateUserByID")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(UpdateMeResponseObject); ok {
-		if err := validResponse.VisitUpdateMeResponse(w); err != nil {
+	} else if validResponse, ok := response.(UpdateUserByIDResponseObject); ok {
+		if err := validResponse.VisitUpdateUserByIDResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
