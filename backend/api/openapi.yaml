@@ -302,7 +302,7 @@ paths:
   # ── Users ──────────────────────────────────────────────────────────────────
   /users/me:
     get:
-      operationId: GetMe
+      operationId: GetUserByID
       summary: Return the authenticated user's profile
       tags: [users]
       security:

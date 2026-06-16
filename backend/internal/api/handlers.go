@@ -36,22 +36,28 @@ type FeatureService interface {
 	IsEnabled(ctx context.Context, name string) bool
 }
 
-// Handlers implements StrictServerInterface. Dependencies are injected feature by feature.
-type Handlers struct {
-	userSvc    UserService
-	authSvc    *auth.Service
-	streamSvc  StreamService
-	featureSvc FeatureService
-	logger     *slog.Logger
+type GetUserByIDUsecase interface {
+	Execute(ctx context.Context, id string) (*user.User, error)
 }
 
-func NewHandlers(userSvc UserService, authSvc *auth.Service, streamSvc StreamService, featureSvc FeatureService, logger *slog.Logger) *Handlers {
+// Handlers implements StrictServerInterface. Dependencies are injected feature by feature.
+type Handlers struct {
+	userSvc       UserService
+	authSvc       *auth.Service
+	streamSvc     StreamService
+	featureSvc    FeatureService
+	getUserByIDUC GetUserByIDUsecase
+	logger        *slog.Logger
+}
+
+func NewHandlers(userSvc UserService, authSvc *auth.Service, streamSvc StreamService, featureSvc FeatureService, getUserByIDUC GetUserByIDUsecase, logger *slog.Logger) *Handlers {
 	return &Handlers{
-		userSvc:    userSvc,
-		authSvc:    authSvc,
-		streamSvc:  streamSvc,
-		featureSvc: featureSvc,
-		logger:     logger,
+		userSvc:       userSvc,
+		authSvc:       authSvc,
+		streamSvc:     streamSvc,
+		featureSvc:    featureSvc,
+		getUserByIDUC: getUserByIDUC,
+		logger:        logger,
 	}
 }
 
@@ -76,6 +82,33 @@ func streamToAPI(s *streaming.Stream) (Stream, error) {
 	}
 	st.EndedAt = s.EndedAt
 	return st, nil
+}
+
+func userToAPI(u *user.User) User {
+	favTracks := make([]openapi_types.UUID, len(u.FavoriteTrackIDs))
+	for i, id := range u.FavoriteTrackIDs {
+		favTracks[i] = openapi_types.UUID(id.Bytes)
+	}
+	favStreams := make([]openapi_types.UUID, len(u.FavoriteStreamIDs))
+	for i, id := range u.FavoriteStreamIDs {
+		favStreams[i] = openapi_types.UUID(id.Bytes)
+	}
+	favPlaylists := make([]openapi_types.UUID, len(u.FavoritePlaylistIDs))
+	for i, id := range u.FavoritePlaylistIDs {
+		favPlaylists[i] = openapi_types.UUID(id.Bytes)
+	}
+
+	return User{
+		Id:                  openapi_types.UUID(u.ID.Bytes),
+		Username:            u.Username,
+		Email:               openapi_types.Email(u.Email),
+		Role:                Role(u.Role),
+		FavoriteTrackIds:    favTracks,
+		FavoriteStreamIds:   favStreams,
+		FavoritePlaylistIds: favPlaylists,
+		CreatedAt:           u.CreatedAt,
+		UpdatedAt:           u.UpdatedAt,
+	}
 }
 
 func (h *Handlers) GetHealth(_ context.Context, _ GetHealthRequestObject) (GetHealthResponseObject, error) {
@@ -158,8 +191,32 @@ func (h *Handlers) RefreshToken(_ context.Context, req RefreshTokenRequestObject
 	}), nil
 }
 
-func (h *Handlers) GetMe(_ context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) GetUserByID(ctx context.Context, _ GetUserByIDRequestObject) (GetUserByIDResponseObject, error) {
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return GetUserByID401JSONResponse{
+			UnauthorizedJSONResponse: UnauthorizedJSONResponse{Code: 401, Message: "authentication required"},
+		}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	u, err := h.getUserByIDUC.Execute(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, user.ErrNotFound) {
+			return GetUserByID401JSONResponse{
+				UnauthorizedJSONResponse: UnauthorizedJSONResponse{Code: 401, Message: "authentication required"},
+			}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "get user by id timeout", "route", "GET /users/me")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	return GetUserByID200JSONResponse(userToAPI(u)), nil
 }
 
 func (h *Handlers) UpdateMe(_ context.Context, _ UpdateMeRequestObject) (UpdateMeResponseObject, error) {

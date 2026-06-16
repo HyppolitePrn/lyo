@@ -357,7 +357,7 @@ type ServerInterface interface {
 	GetTrack(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// Return the authenticated user's profile
 	// (GET /users/me)
-	GetMe(w http.ResponseWriter, r *http.Request)
+	GetUserByID(w http.ResponseWriter, r *http.Request)
 	// Update the authenticated user's profile
 	// (PATCH /users/me)
 	UpdateMe(w http.ResponseWriter, r *http.Request)
@@ -513,7 +513,7 @@ func (_ Unimplemented) GetTrack(w http.ResponseWriter, r *http.Request, id opena
 
 // Return the authenticated user's profile
 // (GET /users/me)
-func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1085,8 +1085,8 @@ func (siw *ServerInterfaceWrapper) GetTrack(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
-// GetMe operation middleware
-func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+// GetUserByID operation middleware
+func (siw *ServerInterfaceWrapper) GetUserByID(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
@@ -1095,7 +1095,7 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetMe(w, r)
+		siw.Handler.GetUserByID(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1488,7 +1488,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/tracks/{id}", wrapper.GetTrack)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/users/me", wrapper.GetMe)
+		r.Get(options.BaseURL+"/users/me", wrapper.GetUserByID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/users/me", wrapper.UpdateMe)
@@ -2204,25 +2204,25 @@ func (response GetTrack404JSONResponse) VisitGetTrackResponse(w http.ResponseWri
 	return json.NewEncoder(w).Encode(response)
 }
 
-type GetMeRequestObject struct {
+type GetUserByIDRequestObject struct {
 }
 
-type GetMeResponseObject interface {
-	VisitGetMeResponse(w http.ResponseWriter) error
+type GetUserByIDResponseObject interface {
+	VisitGetUserByIDResponse(w http.ResponseWriter) error
 }
 
-type GetMe200JSONResponse User
+type GetUserByID200JSONResponse User
 
-func (response GetMe200JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+func (response GetUserByID200JSONResponse) VisitGetUserByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
 
-type GetMe401JSONResponse struct{ UnauthorizedJSONResponse }
+type GetUserByID401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response GetMe401JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+func (response GetUserByID401JSONResponse) VisitGetUserByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
 
@@ -2510,7 +2510,7 @@ type StrictServerInterface interface {
 	GetTrack(ctx context.Context, request GetTrackRequestObject) (GetTrackResponseObject, error)
 	// Return the authenticated user's profile
 	// (GET /users/me)
-	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	GetUserByID(ctx context.Context, request GetUserByIDRequestObject) (GetUserByIDResponseObject, error)
 	// Update the authenticated user's profile
 	// (PATCH /users/me)
 	UpdateMe(ctx context.Context, request UpdateMeRequestObject) (UpdateMeResponseObject, error)
@@ -3155,23 +3155,23 @@ func (sh *strictHandler) GetTrack(w http.ResponseWriter, r *http.Request, id ope
 	}
 }
 
-// GetMe operation middleware
-func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
-	var request GetMeRequestObject
+// GetUserByID operation middleware
+func (sh *strictHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
+	var request GetUserByIDRequestObject
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetMe(ctx, request.(GetMeRequestObject))
+		return sh.ssi.GetUserByID(ctx, request.(GetUserByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetMe")
+		handler = middleware(handler, "GetUserByID")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetMeResponseObject); ok {
-		if err := validResponse.VisitGetMeResponse(w); err != nil {
+	} else if validResponse, ok := response.(GetUserByIDResponseObject); ok {
+		if err := validResponse.VisitGetUserByIDResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
