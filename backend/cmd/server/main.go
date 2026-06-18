@@ -27,6 +27,7 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/observability"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/user"
+	userusecase "github.com/hyppoliteprn/lyo/internal/user/usecase"
 	"github.com/hyppoliteprn/lyo/migrations"
 	"github.com/hyppoliteprn/lyo/pkg/config"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
@@ -96,6 +97,8 @@ func main() {
 
 	userRepo := user.NewRepository(pool)
 	userSvc := user.NewService(userRepo, authSvc)
+	getUserByIDUC := userusecase.NewGetUserByIDUsecase(userRepo)
+	updateUserByIDUC := userusecase.NewUpdateUserByIDUsecase(userRepo)
 
 	featRepo := features.NewRepository(pool)
 	featSvc := features.NewService(featRepo)
@@ -118,7 +121,7 @@ func main() {
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, getUserByIDUC, updateUserByIDUC, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,
