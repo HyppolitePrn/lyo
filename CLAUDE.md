@@ -120,11 +120,13 @@ Migrations live in `backend/migrations/` as numbered SQL files and are embedded 
 ### State management pattern
 
 All features follow the same structure:
-- `providers/<feature>_notifier.dart` — `Notifier<State>` with a `copyWith` state class
+- `providers/<feature>_notifier.dart` — a `ChangeNotifier` subclass holding mutable state fields directly (no separate immutable state class), calling `notifyListeners()` after each mutation
 - `services/<feature>_service.dart` — raw API calls via `ApiClient`
-- `screens/` + `widgets/` — consume providers via `ref.watch`
+- `screens/` + `widgets/` — consume notifiers via `context.watch<T>()` (rebuilds on change) or `context.read<T>()` (one-off calls, e.g. inside callbacks/`initState`)
 
-`ApiClient` (`core/api/api_client.dart`) is a thin HTTP wrapper. It derives the base URL from `--dart-define=API_BASE_URL` at build time (default: `http://10.0.2.2:8080` for Android emulator → host). WebSocket URIs are derived from the same base via `.wsUri()`.
+Notifiers are registered once in `main.dart` under a `MultiProvider` (`ChangeNotifierProvider` per notifier, plus a plain `Provider<FeatureFlags>`). Notifiers that need the current auth token (e.g. `PlayerNotifier.connect`, `BroadcasterNotifier.startBroadcast`) take it as a method parameter — read it from `AuthNotifier` via `context.read<AuthNotifier>().accessToken` at the call site — since notifiers don't reach into each other directly.
+
+`ApiClient` (`core/api/api_client.dart`) is a thin, stateless HTTP wrapper (`const ApiClient()`), constructor-injected into each notifier for testability. It derives the base URL from `--dart-define=API_BASE_URL` at build time (default: `http://10.0.2.2:8080` for Android emulator → host). WebSocket URIs are derived from the same base via `.wsUri()`.
 
 ### Audio pipeline
 

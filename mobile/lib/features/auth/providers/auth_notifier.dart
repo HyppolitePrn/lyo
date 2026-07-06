@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/api/api_client.dart';
 import '../services/auth_service.dart';
@@ -28,77 +28,43 @@ String? _jwtRole(String token) {
   }
 }
 
-final apiClientProvider = Provider<ApiClient>((_) => const ApiClient());
+class AuthNotifier extends ChangeNotifier {
+  AuthNotifier({ApiClient apiClient = const ApiClient()})
+      : _svc = AuthService(apiClient);
 
-final _authServiceProvider = Provider<AuthService>(
-  (ref) => AuthService(ref.watch(apiClientProvider)),
-);
+  final AuthService _svc;
 
-class AuthState {
-  const AuthState({
-    this.isLoading = false,
-    this.error,
-    this.isAuthenticated = false,
-    this.isAnonymous = false,
-    this.accessToken,
-    this.role,
-  });
-
-  final bool isLoading;
-  final String? error;
-  final bool isAuthenticated;
-  final bool isAnonymous;
-  final String? accessToken;
-  final String? role;
+  bool isLoading = false;
+  String? error;
+  bool isAuthenticated = false;
+  bool isAnonymous = false;
+  String? accessToken;
+  String? role;
 
   bool get hasAccess => isAuthenticated || isAnonymous;
   bool get isBroadcaster => role == 'broadcaster' || role == 'admin';
 
-  AuthState copyWith({
-    bool? isLoading,
-    String? error,
-    bool? isAuthenticated,
-    bool? isAnonymous,
-    String? accessToken,
-    String? role,
-    bool clearError = false,
-  }) {
-    return AuthState(
-      isLoading: isLoading ?? this.isLoading,
-      error: clearError ? null : (error ?? this.error),
-      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
-      isAnonymous: isAnonymous ?? this.isAnonymous,
-      accessToken: accessToken ?? this.accessToken,
-      role: role ?? this.role,
-    );
-  }
-}
-
-class AuthNotifier extends Notifier<AuthState> {
-  @override
-  AuthState build() => const AuthState();
-
-  AuthService get _svc => ref.read(_authServiceProvider);
-
   Future<bool> signIn(String email, String password) async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    isLoading = true;
+    error = null;
+    notifyListeners();
     try {
       final tokens = await _svc.login(email, password);
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        accessToken: tokens.accessToken,
-        role: _jwtRole(tokens.accessToken),
-      );
+      isLoading = false;
+      isAuthenticated = true;
+      accessToken = tokens.accessToken;
+      role = _jwtRole(tokens.accessToken);
+      notifyListeners();
       return true;
     } on ApiException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      isLoading = false;
+      error = e.message;
+      notifyListeners();
       return false;
     } catch (_) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Connection failed. Check your network.',
-      );
+      isLoading = false;
+      error = 'Connection failed. Check your network.';
+      notifyListeners();
       return false;
     }
   }
@@ -108,34 +74,38 @@ class AuthNotifier extends Notifier<AuthState> {
     String email,
     String password,
   ) async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    isLoading = true;
+    error = null;
+    notifyListeners();
     try {
       final tokens = await _svc.register(username, email, password);
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        accessToken: tokens.accessToken,
-        role: _jwtRole(tokens.accessToken),
-      );
+      isLoading = false;
+      isAuthenticated = true;
+      accessToken = tokens.accessToken;
+      role = _jwtRole(tokens.accessToken);
+      notifyListeners();
       return true;
     } on ApiException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      isLoading = false;
+      error = e.message;
+      notifyListeners();
       return false;
     } catch (_) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Connection failed. Check your network.',
-      );
+      isLoading = false;
+      error = 'Connection failed. Check your network.';
+      notifyListeners();
       return false;
     }
   }
 
   void continueAnonymously() {
-    state = state.copyWith(isAnonymous: true, clearError: true);
+    isAnonymous = true;
+    error = null;
+    notifyListeners();
   }
 
-  void clearError() => state = state.copyWith(clearError: true);
+  void clearError() {
+    error = null;
+    notifyListeners();
+  }
 }
-
-final authNotifierProvider =
-    NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);

@@ -1,17 +1,17 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/theme/lyo_tokens.dart';
 import '../providers/auth_notifier.dart';
 
-class SplashScreen extends ConsumerWidget {
+class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: lyoBgDark,
       body: Stack(
@@ -277,9 +277,9 @@ class _HeroCopy extends StatelessWidget {
   }
 }
 
-class _CtaBlock extends ConsumerWidget {
+class _CtaBlock extends StatelessWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -305,7 +305,7 @@ class _CtaBlock extends ConsumerWidget {
         const SizedBox(height: lyoGapS),
         TextButton(
           onPressed: () {
-            ref.read(authNotifierProvider.notifier).continueAnonymously();
+            context.read<AuthNotifier>().continueAnonymously();
             context.go('/home');
           },
           child: const Text(

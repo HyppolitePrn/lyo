@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../player/models/stream_model.dart';
 import '../../player/providers/player_notifier.dart';
 import '../models/home_models.dart';
 import '../providers/home_notifier.dart';
-import '../providers/live_streams_provider.dart';
 import '../widgets/live_eq_widget.dart';
 import '../widgets/lyo_artwork_tile.dart';
 import '../widgets/mini_player.dart';
@@ -101,14 +101,13 @@ String _fmt(int n) => n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final home = ref.watch(homeNotifierProvider);
-    final auth = ref.watch(authNotifierProvider);
-    final notifier = ref.read(homeNotifierProvider.notifier);
+  Widget build(BuildContext context) {
+    final home = context.watch<HomeNotifier>();
+    final auth = context.watch<AuthNotifier>();
 
     final dark = Theme.of(context).brightness == Brightness.dark;
     final bg = dark ? lyoBgDark : lyoBgLight;
@@ -119,7 +118,7 @@ class HomeScreen extends ConsumerWidget {
       backgroundColor: bg,
       body: Stack(
         children: [
-          _buildTabBody(context, ref, home, notifier, dark),
+          _buildTabBody(context, home, dark),
           if (home.miniPlayer.isVisible)
             Positioned(
               bottom: 8,
@@ -134,10 +133,10 @@ class HomeScreen extends ConsumerWidget {
                     context.push('/recorded-player/current');
                   }
                 },
-                onToggle: notifier.togglePlayPause,
+                onToggle: home.togglePlayPause,
                 onDismiss: () {
-                  ref.read(playerNotifierProvider.notifier).disconnect();
-                  notifier.dismissMiniPlayer();
+                  context.read<PlayerNotifier>().disconnect();
+                  home.dismissMiniPlayer();
                 },
               ),
             ),
@@ -149,7 +148,7 @@ class HomeScreen extends ConsumerWidget {
           Container(height: 1, color: border),
           BottomNavigationBar(
             currentIndex: home.selectedTab,
-            onTap: notifier.switchTab,
+            onTap: home.switchTab,
             type: BottomNavigationBarType.fixed,
             backgroundColor: navBg,
             selectedItemColor: lyoAccent,
@@ -199,9 +198,7 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildTabBody(
     BuildContext context,
-    WidgetRef ref,
-    HomeState home,
-    HomeNotifier notifier,
+    HomeNotifier home,
     bool dark,
   ) {
     switch (home.selectedTab) {
@@ -222,18 +219,32 @@ class HomeScreen extends ConsumerWidget {
 
 // ── Home tab body ─────────────────────────────────────────────────────────────
 
-class _HomeBody extends ConsumerWidget {
+class _HomeBody extends StatefulWidget {
   const _HomeBody({required this.dark});
   final bool dark;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  State<_HomeBody> createState() => _HomeBodyState();
+}
+
+class _HomeBodyState extends State<_HomeBody> {
+  @override
+  void initState() {
+    super.initState();
+    final token = context.read<AuthNotifier>().accessToken ?? '';
+    context.read<HomeNotifier>().refreshLiveStreams(token);
+  }
+
+  bool get dark => widget.dark;
+
+  @override
+  Widget build(BuildContext context) {
     return SafeArea(
       child: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(context)),
-          SliverToBoxAdapter(child: _buildLiveNow(context, ref)),
-          SliverToBoxAdapter(child: _buildRecentEpisodes(context, ref)),
+          SliverToBoxAdapter(child: _buildLiveNow(context)),
+          SliverToBoxAdapter(child: _buildRecentEpisodes(context)),
           SliverToBoxAdapter(child: _buildExplore(context)),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
@@ -309,23 +320,28 @@ class _HomeBody extends ConsumerWidget {
     );
   }
 
-  Widget _buildLiveNow(BuildContext context, WidgetRef ref) {
+  Widget _buildLiveNow(BuildContext context) {
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
     final textSub = dark ? lyoSubDark : lyoSubLight;
-    final notifier = ref.read(homeNotifierProvider.notifier);
-    final asyncStreams = ref.watch(liveStreamsProvider);
+    final notifier = context.watch<HomeNotifier>();
 
-    Widget listContent = asyncStreams.when(
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: lyoAccent, strokeWidth: 2),
-      ),
-      error: (e, _) => Center(
-        child: Text(
-          'Could not load streams',
-          style: TextStyle(color: textSub, fontSize: lyoCaption),
-        ),
-      ),
-      data: (streams) {
+    Widget listContent = FutureBuilder<List<LiveStream>>(
+      future: notifier.liveStreams,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: lyoAccent, strokeWidth: 2),
+          );
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Could not load streams',
+              style: TextStyle(color: textSub, fontSize: lyoCaption),
+            ),
+          );
+        }
+        final streams = snapshot.data ?? const <LiveStream>[];
         if (streams.isEmpty) {
           return Center(
             child: Column(
@@ -407,7 +423,10 @@ class _HomeBody extends ConsumerWidget {
                     size: 18, color: dark ? lyoSubDark : lyoSubLight),
                 tooltip: 'Refresh',
                 visualDensity: VisualDensity.compact,
-                onPressed: () => ref.invalidate(liveStreamsProvider),
+                onPressed: () {
+                  final token = context.read<AuthNotifier>().accessToken ?? '';
+                  notifier.refreshLiveStreams(token);
+                },
               ),
             ],
           ),
@@ -417,8 +436,8 @@ class _HomeBody extends ConsumerWidget {
     );
   }
 
-  Widget _buildRecentEpisodes(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(homeNotifierProvider.notifier);
+  Widget _buildRecentEpisodes(BuildContext context) {
+    final notifier = context.read<HomeNotifier>();
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
     final textSub = dark ? lyoSubDark : lyoSubLight;
     final border = dark ? lyoBorderDark : lyoBorderLight;

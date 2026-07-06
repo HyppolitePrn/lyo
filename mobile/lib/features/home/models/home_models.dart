@@ -81,22 +81,3 @@ class MiniPlayerState {
         type: type ?? this.type,
       );
 }
-
-class HomeState {
-  const HomeState({
-    this.selectedTab = 0,
-    this.miniPlayer = const MiniPlayerState(),
-  });
-
-  final int selectedTab;
-  final MiniPlayerState miniPlayer;
-
-  HomeState copyWith({
-    int? selectedTab,
-    MiniPlayerState? miniPlayer,
-  }) =>
-      HomeState(
-        selectedTab: selectedTab ?? this.selectedTab,
-        miniPlayer: miniPlayer ?? this.miniPlayer,
-      );
-}

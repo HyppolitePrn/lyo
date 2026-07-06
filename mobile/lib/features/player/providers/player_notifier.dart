@@ -1,15 +1,13 @@
 // ignore_for_file: experimental_member_use
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:audio_session/audio_session.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../../core/api/api_client.dart';
-import '../../auth/providers/auth_notifier.dart';
 import '../models/stream_model.dart';
 import '../services/player_service.dart';
 
@@ -33,73 +31,34 @@ class _WsAudioSource extends StreamAudioSource {
   }
 }
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
 enum PlayerStatus { idle, connecting, playing, error }
 
-class PlayerState {
-  const PlayerState({
-    this.status = PlayerStatus.idle,
-    this.stream,
-    this.error,
-  });
+class PlayerNotifier extends ChangeNotifier {
+  PlayerNotifier({ApiClient apiClient = const ApiClient()})
+      : _apiClient = apiClient,
+        _svc = PlayerService(apiClient);
 
-  final PlayerStatus status;
-  final LiveStream? stream;
-  final String? error;
-
-  PlayerState copyWith({
-    PlayerStatus? status,
-    LiveStream? stream,
-    String? error,
-    bool clearError = false,
-  }) {
-    return PlayerState(
-      status: status ?? this.status,
-      stream: stream ?? this.stream,
-      error: clearError ? null : (error ?? this.error),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Providers
-// ---------------------------------------------------------------------------
-final _playerServiceProvider = Provider<PlayerService>(
-  (ref) => PlayerService(ref.watch(apiClientProvider)),
-);
-
-final playerNotifierProvider =
-    NotifierProvider<PlayerNotifier, PlayerState>(PlayerNotifier.new);
-
-// ---------------------------------------------------------------------------
-// Notifier
-// ---------------------------------------------------------------------------
-class PlayerNotifier extends Notifier<PlayerState> {
+  final ApiClient _apiClient;
+  final PlayerService _svc;
   AudioPlayer? _player;
   WebSocketChannel? _channel;
   StreamController<Uint8List>? _byteController;
   StreamSubscription<dynamic>? _wsSub;
 
-  @override
-  PlayerState build() {
-    ref.onDispose(disconnect);
-    return const PlayerState();
-  }
+  PlayerStatus status = PlayerStatus.idle;
+  LiveStream? stream;
+  String? error;
 
-  PlayerService get _svc => ref.read(_playerServiceProvider);
-
-  Future<void> connect(String streamId) async {
-    if (state.status == PlayerStatus.connecting ||
-        state.status == PlayerStatus.playing) {
+  Future<void> connect(String streamId, String? token) async {
+    if (status == PlayerStatus.connecting || status == PlayerStatus.playing) {
       return;
     }
 
-    state = state.copyWith(status: PlayerStatus.connecting, clearError: true);
+    status = PlayerStatus.connecting;
+    error = null;
+    notifyListeners();
 
     try {
-      final token = ref.read(authNotifierProvider).accessToken;
       final liveStream = await _svc.getStream(streamId, token ?? '');
 
       // Configure audio session for playback.
@@ -107,9 +66,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       await session.configure(const AudioSessionConfiguration.music());
 
       // Open WebSocket.
-      final wsUri = ref
-          .read(apiClientProvider)
-          .wsUri('/streams/$streamId/listen', token: token);
+      final wsUri = _apiClient.wsUri('/streams/$streamId/listen', token: token);
       _channel = WebSocketChannel.connect(wsUri,
           protocols: const ['audio-stream']);
       await _channel!.ready.catchError((_) {});
@@ -130,7 +87,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
       // Transition to playing immediately — setAudioSource/play() can hang
       // waiting to buffer on a live stream, freezing the UI in "connecting".
-      state = state.copyWith(status: PlayerStatus.playing, stream: liveStream);
+      status = PlayerStatus.playing;
+      stream = liveStream;
+      notifyListeners();
 
       _player = AudioPlayer();
       // Fire-and-forget: audio setup runs in the background without blocking state.
@@ -138,33 +97,39 @@ class PlayerNotifier extends Notifier<PlayerState> {
           .setAudioSource(_WsAudioSource(_byteController!.stream))
           .then((_) => _player?.play())
           .catchError((Object e) {
-        state = state.copyWith(
-            status: PlayerStatus.error, error: 'Playback failed. Try again.');
+        status = PlayerStatus.error;
+        error = 'Playback failed. Try again.';
+        notifyListeners();
         _cleanup();
       });
     } on ApiException catch (e) {
-      state =
-          state.copyWith(status: PlayerStatus.error, error: e.message);
+      status = PlayerStatus.error;
+      error = e.message;
+      notifyListeners();
       await _cleanup();
     } catch (e) {
-      state = state.copyWith(
-          status: PlayerStatus.error, error: 'Connection failed. Try again.');
+      status = PlayerStatus.error;
+      error = 'Connection failed. Try again.';
+      notifyListeners();
       await _cleanup();
     }
   }
 
   void _onWsDone() {
-    // Stream ended server-side — return to idle gracefully.
     _cleanup().then((_) {
-      if (state.status != PlayerStatus.idle) {
-        state = state.copyWith(status: PlayerStatus.idle, clearError: true);
+      if (status != PlayerStatus.idle) {
+        status = PlayerStatus.idle;
+        error = null;
+        notifyListeners();
       }
     });
   }
 
   Future<void> disconnect() async {
     await _cleanup();
-    state = state.copyWith(status: PlayerStatus.idle, clearError: true);
+    status = PlayerStatus.idle;
+    error = null;
+    notifyListeners();
   }
 
   Future<void> _cleanup() async {
@@ -178,5 +143,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
     await _player?.stop();
     await _player?.dispose();
     _player = null;
+  }
+
+  @override
+  void dispose() {
+    disconnect();
+    super.dispose();
   }
 }

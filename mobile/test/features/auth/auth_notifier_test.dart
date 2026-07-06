@@ -1,4 +1,3 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -14,9 +13,7 @@ void main() {
     mockApi = MockApiClient();
   });
 
-  ProviderContainer makeContainer() => ProviderContainer(
-        overrides: [apiClientProvider.overrideWithValue(mockApi)],
-      );
+  AuthNotifier makeNotifier() => AuthNotifier(apiClient: mockApi);
 
   const validTokens = {
     'access_token': 'access-abc',
@@ -29,16 +26,14 @@ void main() {
         () => mockApi.post('/auth/login', any()),
       ).thenAnswer((_) async => validTokens);
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      final result = await container
-          .read(authNotifierProvider.notifier)
-          .signIn('user@example.com', 'password123');
+      final result =
+          await notifier.signIn('user@example.com', 'password123');
 
       expect(result, isTrue);
-      expect(container.read(authNotifierProvider).isAuthenticated, isTrue);
-      expect(container.read(authNotifierProvider).error, isNull);
+      expect(notifier.isAuthenticated, isTrue);
+      expect(notifier.error, isNull);
     });
 
     test('invalid credentials — sets error, stays unauthenticated', () async {
@@ -46,19 +41,14 @@ void main() {
         () => mockApi.post('/auth/login', any()),
       ).thenThrow(const ApiException(401, 'Invalid credentials'));
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      final result = await container
-          .read(authNotifierProvider.notifier)
-          .signIn('user@example.com', 'wrongpassword');
+      final result =
+          await notifier.signIn('user@example.com', 'wrongpassword');
 
       expect(result, isFalse);
-      expect(container.read(authNotifierProvider).isAuthenticated, isFalse);
-      expect(
-        container.read(authNotifierProvider).error,
-        'Invalid credentials',
-      );
+      expect(notifier.isAuthenticated, isFalse);
+      expect(notifier.error, 'Invalid credentials');
     });
 
     test('network failure — sets generic error message', () async {
@@ -66,42 +56,32 @@ void main() {
         () => mockApi.post('/auth/login', any()),
       ).thenThrow(Exception('connection refused'));
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      final result = await container
-          .read(authNotifierProvider.notifier)
-          .signIn('user@example.com', 'password123');
+      final result =
+          await notifier.signIn('user@example.com', 'password123');
 
       expect(result, isFalse);
-      expect(container.read(authNotifierProvider).isAuthenticated, isFalse);
-      expect(
-        container.read(authNotifierProvider).error,
-        contains('network'),
-      );
+      expect(notifier.isAuthenticated, isFalse);
+      expect(notifier.error, contains('network'));
     });
 
     test('clears previous error on new attempt', () async {
       when(() => mockApi.post('/auth/login', any()))
           .thenThrow(const ApiException(401, 'Invalid credentials'));
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      await container
-          .read(authNotifierProvider.notifier)
-          .signIn('user@example.com', 'bad');
+      await notifier.signIn('user@example.com', 'bad');
 
-      expect(container.read(authNotifierProvider).error, isNotNull);
+      expect(notifier.error, isNotNull);
 
       when(() => mockApi.post('/auth/login', any()))
           .thenAnswer((_) async => validTokens);
 
-      await container
-          .read(authNotifierProvider.notifier)
-          .signIn('user@example.com', 'password123');
+      await notifier.signIn('user@example.com', 'password123');
 
-      expect(container.read(authNotifierProvider).error, isNull);
+      expect(notifier.error, isNull);
     });
   });
 
@@ -111,16 +91,14 @@ void main() {
         () => mockApi.post('/auth/register', any()),
       ).thenAnswer((_) async => validTokens);
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      final result = await container
-          .read(authNotifierProvider.notifier)
-          .register('johndoe', 'john@example.com', 'password123');
+      final result = await notifier.register(
+          'johndoe', 'john@example.com', 'password123');
 
       expect(result, isTrue);
-      expect(container.read(authNotifierProvider).isAuthenticated, isTrue);
-      expect(container.read(authNotifierProvider).error, isNull);
+      expect(notifier.isAuthenticated, isTrue);
+      expect(notifier.error, isNull);
     });
 
     test('duplicate username — sets error from backend', () async {
@@ -128,19 +106,14 @@ void main() {
         () => mockApi.post('/auth/register', any()),
       ).thenThrow(const ApiException(409, 'Username already taken'));
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      final result = await container
-          .read(authNotifierProvider.notifier)
-          .register('johndoe', 'john@example.com', 'password123');
+      final result = await notifier.register(
+          'johndoe', 'john@example.com', 'password123');
 
       expect(result, isFalse);
-      expect(container.read(authNotifierProvider).isAuthenticated, isFalse);
-      expect(
-        container.read(authNotifierProvider).error,
-        'Username already taken',
-      );
+      expect(notifier.isAuthenticated, isFalse);
+      expect(notifier.error, 'Username already taken');
     });
 
     test('duplicate email — sets error from backend', () async {
@@ -148,18 +121,13 @@ void main() {
         () => mockApi.post('/auth/register', any()),
       ).thenThrow(const ApiException(409, 'Email already registered'));
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      final result = await container
-          .read(authNotifierProvider.notifier)
-          .register('newuser', 'existing@example.com', 'password123');
+      final result = await notifier.register(
+          'newuser', 'existing@example.com', 'password123');
 
       expect(result, isFalse);
-      expect(
-        container.read(authNotifierProvider).error,
-        'Email already registered',
-      );
+      expect(notifier.error, 'Email already registered');
     });
 
     test('network failure — sets generic error message', () async {
@@ -167,32 +135,25 @@ void main() {
         () => mockApi.post('/auth/register', any()),
       ).thenThrow(Exception('connection refused'));
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      final result = await container
-          .read(authNotifierProvider.notifier)
-          .register('johndoe', 'john@example.com', 'password123');
+      final result = await notifier.register(
+          'johndoe', 'john@example.com', 'password123');
 
       expect(result, isFalse);
-      expect(
-        container.read(authNotifierProvider).error,
-        contains('network'),
-      );
+      expect(notifier.error, contains('network'));
     });
   });
 
   group('continueAnonymously', () {
     test('sets isAnonymous true without touching isAuthenticated', () {
-      final container = makeContainer();
-      addTearDown(container.dispose);
+      final notifier = makeNotifier();
 
-      container.read(authNotifierProvider.notifier).continueAnonymously();
+      notifier.continueAnonymously();
 
-      final state = container.read(authNotifierProvider);
-      expect(state.isAnonymous, isTrue);
-      expect(state.isAuthenticated, isFalse);
-      expect(state.hasAccess, isTrue);
+      expect(notifier.isAnonymous, isTrue);
+      expect(notifier.isAuthenticated, isFalse);
+      expect(notifier.hasAccess, isTrue);
     });
   });
 }

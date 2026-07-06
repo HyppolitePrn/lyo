@@ -1,36 +1,38 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/theme/lyo_tokens.dart';
+import '../../auth/providers/auth_notifier.dart';
 import '../providers/player_notifier.dart';
 
-class PlayerScreen extends ConsumerStatefulWidget {
+class PlayerScreen extends StatefulWidget {
   const PlayerScreen({required this.streamId, super.key});
 
   final String streamId;
 
   @override
-  ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
+  State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends ConsumerState<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(playerNotifierProvider.notifier).connect(widget.streamId);
+      final token = context.read<AuthNotifier>().accessToken;
+      context.read<PlayerNotifier>().connect(widget.streamId, token);
     });
   }
 
   @override
   void dispose() {
-    ref.read(playerNotifierProvider.notifier).disconnect();
+    context.read<PlayerNotifier>().disconnect();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final player = ref.watch(playerNotifierProvider);
+    final player = context.watch<PlayerNotifier>();
     final dark = Theme.of(context).brightness == Brightness.dark;
     final bg = dark ? lyoBgDark : lyoBgLight;
     final surface = dark ? lyoSurfaceDark : lyoSurfaceLight;
@@ -82,11 +84,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               const SizedBox(height: lyoGapXL),
               _ControlButton(
                 status: player.status,
-                onConnect: () => ref
-                    .read(playerNotifierProvider.notifier)
-                    .connect(widget.streamId),
-                onDisconnect: () =>
-                    ref.read(playerNotifierProvider.notifier).disconnect(),
+                onConnect: () {
+                  final token = context.read<AuthNotifier>().accessToken;
+                  context.read<PlayerNotifier>().connect(widget.streamId, token);
+                },
+                onDisconnect: () => context.read<PlayerNotifier>().disconnect(),
               ),
               if (player.error != null) ...[
                 const SizedBox(height: lyoGapM),

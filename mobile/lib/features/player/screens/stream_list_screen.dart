@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
 import '../models/stream_model.dart';
 import '../services/player_service.dart';
 
-class StreamListScreen extends ConsumerStatefulWidget {
+class StreamListScreen extends StatefulWidget {
   const StreamListScreen({super.key});
 
   @override
-  ConsumerState<StreamListScreen> createState() => _StreamListScreenState();
+  State<StreamListScreen> createState() => _StreamListScreenState();
 }
 
-class _StreamListScreenState extends ConsumerState<StreamListScreen> {
+class _StreamListScreenState extends State<StreamListScreen> {
   List<LiveStream> _streams = [];
   bool _isLoading = true;
   String? _error;
@@ -31,8 +32,8 @@ class _StreamListScreenState extends ConsumerState<StreamListScreen> {
       _error = null;
     });
     try {
-      final token = ref.read(authNotifierProvider).accessToken ?? '';
-      final svc = PlayerService(ref.read(apiClientProvider));
+      final token = context.read<AuthNotifier>().accessToken ?? '';
+      const svc = PlayerService(ApiClient());
       final streams = await svc.listLive(token);
       if (mounted) {
         setState(() => _streams = streams);
