@@ -9,6 +9,7 @@ import '../../features/player/screens/live_player_screen.dart';
 import '../../features/player/screens/player_screen.dart';
 import '../../features/player/screens/recorded_player_screen.dart';
 import '../../features/player/screens/stream_list_screen.dart';
+import '../../features/profile/screens/profile_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/splash',
@@ -28,6 +29,10 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/home',
       builder: (context, state) => const HomeScreen(),
+    ),
+    GoRoute(
+      path: '/profile',
+      builder: (context, state) => const ProfileScreen(),
     ),
     // Live stream list (full API-backed screen)
     GoRoute(

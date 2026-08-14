@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../user/services/user_service.dart';
 import '../services/auth_service.dart';
 
 // Decodes the JWT payload to extract the `role` claim without a library.
@@ -30,9 +31,11 @@ String? _jwtRole(String token) {
 
 class AuthNotifier extends ChangeNotifier {
   AuthNotifier({ApiClient apiClient = const ApiClient()})
-      : _svc = AuthService(apiClient);
+      : _svc = AuthService(apiClient),
+        _userSvc = UserService(apiClient);
 
   final AuthService _svc;
+  final UserService _userSvc;
 
   bool isLoading = false;
   String? error;
@@ -40,9 +43,26 @@ class AuthNotifier extends ChangeNotifier {
   bool isAnonymous = false;
   String? accessToken;
   String? role;
+  String? username;
+  String? email;
 
   bool get hasAccess => isAuthenticated || isAnonymous;
   bool get isBroadcaster => role == 'broadcaster' || role == 'admin';
+
+  Future<void> fetchProfile() async {
+    final token = accessToken;
+    if (token == null) {
+      return;
+    }
+    try {
+      final user = await _userSvc.getMe(token);
+      username = user.username;
+      email = user.email;
+      notifyListeners();
+    } catch (_) {
+      // Best-effort: the session stays valid even if the profile fetch fails.
+    }
+  }
 
   Future<bool> signIn(String email, String password) async {
     isLoading = true;
@@ -55,6 +75,7 @@ class AuthNotifier extends ChangeNotifier {
       accessToken = tokens.accessToken;
       role = _jwtRole(tokens.accessToken);
       notifyListeners();
+      await fetchProfile();
       return true;
     } on ApiException catch (e) {
       isLoading = false;
@@ -84,6 +105,7 @@ class AuthNotifier extends ChangeNotifier {
       accessToken = tokens.accessToken;
       role = _jwtRole(tokens.accessToken);
       notifyListeners();
+      await fetchProfile();
       return true;
     } on ApiException catch (e) {
       isLoading = false;
@@ -106,6 +128,18 @@ class AuthNotifier extends ChangeNotifier {
 
   void clearError() {
     error = null;
+    notifyListeners();
+  }
+
+  void signOut() {
+    isLoading = false;
+    error = null;
+    isAuthenticated = false;
+    isAnonymous = false;
+    accessToken = null;
+    role = null;
+    username = null;
+    email = null;
     notifyListeners();
   }
 }

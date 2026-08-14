@@ -6,6 +6,7 @@ import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
 import '../../player/models/stream_model.dart';
 import '../../player/providers/player_notifier.dart';
+import '../../profile/screens/profile_screen.dart';
 import '../models/home_models.dart';
 import '../providers/home_notifier.dart';
 import '../widgets/live_eq_widget.dart';
@@ -209,8 +210,7 @@ class HomeScreen extends StatelessWidget {
         return _StubBody(
             label: 'Search', icon: Icons.search, dark: dark);
       case 3:
-        return _StubBody(
-            label: 'Profile', icon: Icons.person, dark: dark);
+        return const ProfileScreen();
       default:
         return _HomeBody(dark: dark);
     }
@@ -253,6 +253,7 @@ class _HomeBodyState extends State<_HomeBody> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final auth = context.watch<AuthNotifier>();
     final textSub = dark ? lyoSubDark : lyoSubLight;
     final surface = dark ? lyoSurfaceDark : lyoSurfaceLight;
 
@@ -265,7 +266,9 @@ class _HomeBodyState extends State<_HomeBody> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _greeting(),
+                auth.username != null
+                    ? '${_greeting()}, ${auth.username}'
+                    : _greeting(),
                 style: TextStyle(
                   fontSize: lyoCaption,
                   color: textSub,
@@ -304,9 +307,9 @@ class _HomeBodyState extends State<_HomeBody> {
                   borderRadius: BorderRadius.circular(19),
                 ),
                 alignment: Alignment.center,
-                child: const Text(
-                  'JD',
-                  style: TextStyle(
+                child: Text(
+                  initialsFrom(auth.username),
+                  style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
