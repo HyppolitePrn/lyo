@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/features/feature_flags_provider.dart';
 import '../../../core/theme/lyo_tokens.dart';
+import '../../auth/providers/auth_notifier.dart';
 import '../../auth/widgets/auth_error_banner.dart';
 import '../../auth/widgets/lyo_text_field.dart';
 import '../providers/broadcaster_notifier.dart';
 
-class BroadcasterScreen extends ConsumerStatefulWidget {
+class BroadcasterScreen extends StatefulWidget {
   const BroadcasterScreen({super.key});
 
   @override
-  ConsumerState<BroadcasterScreen> createState() => _BroadcasterScreenState();
+  State<BroadcasterScreen> createState() => _BroadcasterScreenState();
 }
 
-class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
+class _BroadcasterScreenState extends State<BroadcasterScreen> {
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -34,16 +35,19 @@ class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
-    await ref.read(broadcasterNotifierProvider.notifier).startBroadcast(
+    final token = context.read<AuthNotifier>().accessToken ?? '';
+    await context.read<BroadcasterNotifier>().startBroadcast(
           _titleCtrl.text.trim(),
           _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+          token,
         );
     _liveStartedAt = DateTime.now();
     _tickTimer();
   }
 
   Future<void> _endStream() async {
-    await ref.read(broadcasterNotifierProvider.notifier).stopBroadcast();
+    final token = context.read<AuthNotifier>().accessToken ?? '';
+    await context.read<BroadcasterNotifier>().stopBroadcast(token);
     _liveStartedAt = null;
     setState(() => _liveSeconds = 0);
   }
@@ -53,7 +57,7 @@ class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
       if (!mounted) {
         return;
       }
-      final status = ref.read(broadcasterNotifierProvider).status;
+      final status = context.read<BroadcasterNotifier>().status;
       if (status == BroadcasterStatus.live && _liveStartedAt != null) {
         setState(() {
           _liveSeconds =
@@ -72,7 +76,7 @@ class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final flags = ref.watch(featureFlagsProvider);
+    final flags = context.watch<FeatureFlags>();
     if (!flags.isEnabled('live_streaming')) {
       return Scaffold(
         appBar: AppBar(title: const Text('Go Live')),
@@ -82,7 +86,7 @@ class _BroadcasterScreenState extends ConsumerState<BroadcasterScreen> {
       );
     }
 
-    final broadcaster = ref.watch(broadcasterNotifierProvider);
+    final broadcaster = context.watch<BroadcasterNotifier>();
     final dark = Theme.of(context).brightness == Brightness.dark;
     final bg = dark ? lyoBgDark : lyoBgLight;
     final textPrimary = dark ? lyoTextDark : lyoTextLight;

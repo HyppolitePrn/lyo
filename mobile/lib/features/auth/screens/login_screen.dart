@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/features/feature_flags_provider.dart';
 import '../../../core/theme/lyo_tokens.dart';
@@ -8,14 +8,14 @@ import '../providers/auth_notifier.dart';
 import '../widgets/auth_error_banner.dart';
 import '../widgets/lyo_text_field.dart';
 
-class LoginScreen extends ConsumerStatefulWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
@@ -33,8 +33,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
-    final success = await ref
-        .read(authNotifierProvider.notifier)
+    final success = await context
+        .read<AuthNotifier>()
         .signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
     if (mounted && success) {
       context.go('/home');
@@ -43,8 +43,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = ref.watch(authNotifierProvider);
-    final flags = ref.watch(featureFlagsProvider);
+    final auth = context.watch<AuthNotifier>();
+    final flags = context.watch<FeatureFlags>();
 
     return Scaffold(
       resizeToAvoidBottomInset: true,

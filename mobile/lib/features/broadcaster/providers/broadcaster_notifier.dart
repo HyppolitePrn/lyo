@@ -1,103 +1,60 @@
 import 'dart:async';
-import 'dart:typed_data';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../../core/api/api_client.dart';
-import '../../auth/providers/auth_notifier.dart';
 import '../../player/models/stream_model.dart';
 import '../services/broadcast_service.dart';
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
 enum BroadcasterStatus { idle, creating, live, ending, error }
 
-class BroadcasterState {
-  const BroadcasterState({
-    this.status = BroadcasterStatus.idle,
-    this.stream,
-    this.error,
-  });
+class BroadcasterNotifier extends ChangeNotifier {
+  BroadcasterNotifier({ApiClient apiClient = const ApiClient()})
+      : _apiClient = apiClient,
+        _svc = BroadcastService(apiClient);
 
-  final BroadcasterStatus status;
-  final LiveStream? stream;
-  final String? error;
-
-  BroadcasterState copyWith({
-    BroadcasterStatus? status,
-    LiveStream? stream,
-    String? error,
-    bool clearError = false,
-    bool clearStream = false,
-  }) {
-    return BroadcasterState(
-      status: status ?? this.status,
-      stream: clearStream ? null : (stream ?? this.stream),
-      error: clearError ? null : (error ?? this.error),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Providers
-// ---------------------------------------------------------------------------
-final _broadcastServiceProvider = Provider<BroadcastService>(
-  (ref) => BroadcastService(ref.watch(apiClientProvider)),
-);
-
-final broadcasterNotifierProvider =
-    NotifierProvider<BroadcasterNotifier, BroadcasterState>(
-        BroadcasterNotifier.new);
-
-// ---------------------------------------------------------------------------
-// Notifier
-// ---------------------------------------------------------------------------
-class BroadcasterNotifier extends Notifier<BroadcasterState> {
+  final ApiClient _apiClient;
+  final BroadcastService _svc;
   final AudioRecorder _recorder = AudioRecorder();
   WebSocketChannel? _channel;
   StreamSubscription<Uint8List>? _micSub;
 
-  @override
-  BroadcasterState build() {
-    ref.onDispose(_forceStop);
-    return const BroadcasterState();
-  }
+  BroadcasterStatus status = BroadcasterStatus.idle;
+  LiveStream? stream;
+  String? error;
 
-  BroadcastService get _svc => ref.read(_broadcastServiceProvider);
-
-  Future<void> startBroadcast(String title, String? description) async {
-    if (state.status != BroadcasterStatus.idle &&
-        state.status != BroadcasterStatus.error) {
+  Future<void> startBroadcast(
+    String title,
+    String? description,
+    String token,
+  ) async {
+    if (status != BroadcasterStatus.idle && status != BroadcasterStatus.error) {
       return;
     }
 
-    state =
-        state.copyWith(status: BroadcasterStatus.creating, clearError: true);
+    status = BroadcasterStatus.creating;
+    error = null;
+    notifyListeners();
 
     // Request mic permission before any network call.
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
-      state = state.copyWith(
-        status: BroadcasterStatus.error,
-        error: 'Microphone permission denied.',
-      );
+      status = BroadcasterStatus.error;
+      error = 'Microphone permission denied.';
+      notifyListeners();
       return;
     }
 
     try {
-      final token = ref.read(authNotifierProvider).accessToken ?? '';
-
       // Create the stream record on the backend.
       final liveStream = await _svc.createStream(title, description, token);
 
       // Open WebSocket ingest connection.
-      final wsUri = ref
-          .read(apiClientProvider)
-          .wsUri('/streams/${liveStream.id}/ingest', token: token);
+      final wsUri =
+          _apiClient.wsUri('/streams/${liveStream.id}/ingest', token: token);
       _channel = WebSocketChannel.connect(wsUri,
           protocols: const ['audio-ingest']);
       await _channel!.ready.catchError((_) {});
@@ -114,56 +71,53 @@ class BroadcasterNotifier extends Notifier<BroadcasterState> {
 
       _micSub = micStream.listen(
         (chunk) => _channel?.sink.add(chunk),
-        onDone: _onMicDone,
-        onError: (_) => _onMicDone(),
+        onDone: () => _onMicDone(token),
+        onError: (_) => _onMicDone(token),
       );
 
-      state = state.copyWith(
-        status: BroadcasterStatus.live,
-        stream: liveStream,
-      );
+      status = BroadcasterStatus.live;
+      stream = liveStream;
+      notifyListeners();
     } on ApiException catch (e) {
-      state = state.copyWith(
-        status: BroadcasterStatus.error,
-        error: e.message,
-      );
-      await _cleanup(null);
+      status = BroadcasterStatus.error;
+      error = e.message;
+      notifyListeners();
+      await _cleanup(null, token);
     } catch (e) {
-      state = state.copyWith(
-        status: BroadcasterStatus.error,
-        error: 'Failed to start broadcast. Try again.',
-      );
-      await _cleanup(null);
+      status = BroadcasterStatus.error;
+      error = 'Failed to start broadcast. Try again.';
+      notifyListeners();
+      await _cleanup(null, token);
     }
   }
 
-  Future<void> stopBroadcast() async {
-    if (state.status != BroadcasterStatus.live) {
+  Future<void> stopBroadcast(String token) async {
+    if (status != BroadcasterStatus.live) {
       return;
     }
-    state = state.copyWith(status: BroadcasterStatus.ending, clearError: true);
+    status = BroadcasterStatus.ending;
+    error = null;
+    notifyListeners();
 
-    final streamId = state.stream?.id;
-    await _cleanup(streamId);
-    state = state.copyWith(
-      status: BroadcasterStatus.idle,
-      clearStream: true,
-      clearError: true,
-    );
+    final streamId = stream?.id;
+    await _cleanup(streamId, token);
+    status = BroadcasterStatus.idle;
+    stream = null;
+    error = null;
+    notifyListeners();
   }
 
-  void _onMicDone() {
-    _cleanup(null).then((_) {
-      if (state.status != BroadcasterStatus.idle) {
-        state = state.copyWith(
-          status: BroadcasterStatus.idle,
-          clearStream: true,
-        );
+  void _onMicDone(String token) {
+    _cleanup(null, token).then((_) {
+      if (status != BroadcasterStatus.idle) {
+        status = BroadcasterStatus.idle;
+        stream = null;
+        notifyListeners();
       }
     });
   }
 
-  Future<void> _cleanup(String? streamId) async {
+  Future<void> _cleanup(String? streamId, String token) async {
     await _micSub?.cancel();
     _micSub = null;
     await _recorder.stop();
@@ -176,13 +130,12 @@ class BroadcasterNotifier extends Notifier<BroadcasterState> {
 
     if (streamId != null) {
       try {
-        final token = ref.read(authNotifierProvider).accessToken ?? '';
         await _svc.endStream(streamId, token);
       } catch (_) {}
     }
   }
 
-  // Called by onDispose — must not throw.
+  // Called from dispose — must not throw.
   Future<void> _forceStop() async {
     await _micSub?.cancel();
     _micSub = null;
@@ -190,5 +143,11 @@ class BroadcasterNotifier extends Notifier<BroadcasterState> {
     await _recorder.dispose();
     await _channel?.sink.close();
     _channel = null;
+  }
+
+  @override
+  void dispose() {
+    _forceStop();
+    super.dispose();
   }
 }

@@ -1,5 +1,3 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 class FeatureFlags {
   const FeatureFlags();
 
@@ -14,5 +12,3 @@ class FeatureFlags {
     'social_auth': false,
   };
 }
-
-final featureFlagsProvider = Provider<FeatureFlags>((_) => const FeatureFlags());
