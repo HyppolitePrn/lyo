@@ -25,11 +25,13 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/observability"
+	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/user"
 	userusecase "github.com/hyppoliteprn/lyo/internal/user/usecase"
 	"github.com/hyppoliteprn/lyo/migrations"
 	"github.com/hyppoliteprn/lyo/pkg/config"
+	"github.com/hyppoliteprn/lyo/pkg/mailer"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
 )
 
@@ -103,6 +105,10 @@ func main() {
 	featRepo := features.NewRepository(pool)
 	featSvc := features.NewService(featRepo)
 
+	mailSvc := mailer.New(cfg.Mail)
+	pwResetRepo := passwordreset.NewRepository(pool)
+	pwResetSvc := passwordreset.NewService(pwResetRepo, userRepo, mailSvc, logger)
+
 	streamRepo := streaming.NewRepository(pool)
 	streamSvc := streaming.NewService(streamRepo, cfg.Stream.BufferSize, logger)
 
@@ -121,7 +127,7 @@ func main() {
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, getUserByIDUC, updateUserByIDUC, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, getUserByIDUC, updateUserByIDUC, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,

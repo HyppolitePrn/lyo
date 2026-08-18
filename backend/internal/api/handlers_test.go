@@ -19,6 +19,7 @@ import (
 
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/user"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
@@ -36,7 +37,6 @@ func (m *mockUserService) Register(ctx context.Context, username, email, passwor
 func (m *mockUserService) Login(ctx context.Context, email, password string) (auth.TokenPair, error) {
 	return m.loginFn(ctx, email, password)
 }
-
 
 type mockGetUserByIDUsecase struct {
 	executeFn func(ctx context.Context, id string) (*user.User, error)
@@ -79,16 +79,30 @@ type nopFeatureSvc struct{}
 
 func (nopFeatureSvc) IsEnabled(_ context.Context, _ string) bool { return true }
 
+// mockPasswordResetService implements api.PasswordResetService for handler tests.
+type mockPasswordResetService struct {
+	forgotPasswordFn func(ctx context.Context, email string) error
+	resetPasswordFn  func(ctx context.Context, token, password string) error
+}
+
+func (m *mockPasswordResetService) ForgotPassword(ctx context.Context, email string) error {
+	return m.forgotPasswordFn(ctx, email)
+}
+func (m *mockPasswordResetService) ResetPassword(ctx context.Context, token, password string) error {
+	return m.resetPasswordFn(ctx, token, password)
+}
+
 func newTestRouter(
 	userSvc api.UserService,
 	authSvc *auth.Service,
 	getUserByIDUC api.GetUserByIDUsecase,
 	updateUserByIDUC api.UpdateUserByIDUsecase,
+	pwResetSvc api.PasswordResetService,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(authSvc))
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, getUserByIDUC, updateUserByIDUC, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, getUserByIDUC, updateUserByIDUC, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -160,7 +174,7 @@ func TestRegisterHandler_Success(t *testing.T) {
 			return authSvc.Issue("user-1", auth.RoleUser)
 		},
 	}
-	w := post(t, newTestRouter(svc, authSvc, nil, nil), "/auth/register",
+	w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/register",
 		`{"username":"alice","email":"alice@example.com","password":"secret123"}`)
 
 	if w.Code != http.StatusCreated {
@@ -179,7 +193,7 @@ func TestRegisterHandler_DuplicateEmail(t *testing.T) {
 			return auth.TokenPair{}, &pgconn.PgError{Code: "23505"}
 		},
 	}
-	w := post(t, newTestRouter(svc, authSvc, nil, nil), "/auth/register",
+	w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/register",
 		`{"username":"alice","email":"alice@example.com","password":"secret123"}`)
 
 	if w.Code != http.StatusUnprocessableEntity {
@@ -196,7 +210,7 @@ func TestLoginHandler_Success(t *testing.T) {
 			return authSvc.Issue("user-1", auth.RoleUser)
 		},
 	}
-	w := post(t, newTestRouter(svc, authSvc, nil, nil), "/auth/login",
+	w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/login",
 		`{"email":"alice@example.com","password":"secret123"}`)
 
 	if w.Code != http.StatusOK {
@@ -215,7 +229,7 @@ func TestLoginHandler_InvalidCredentials(t *testing.T) {
 			return auth.TokenPair{}, user.ErrInvalidCredentials
 		},
 	}
-	w := post(t, newTestRouter(svc, authSvc, nil, nil), "/auth/login",
+	w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/login",
 		`{"email":"alice@example.com","password":"wrong"}`)
 
 	if w.Code != http.StatusUnauthorized {
@@ -231,7 +245,7 @@ func TestRefreshTokenHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := post(t, newTestRouter(nil, authSvc, nil, nil), "/auth/refresh",
+	w := post(t, newTestRouter(nil, authSvc, nil, nil, nil), "/auth/refresh",
 		`{"refresh_token":"`+pair.RefreshToken+`"}`)
 
 	if w.Code != http.StatusOK {
@@ -245,11 +259,57 @@ func TestRefreshTokenHandler_Success(t *testing.T) {
 
 func TestRefreshTokenHandler_InvalidToken(t *testing.T) {
 	authSvc := newTestAuthSvc()
-	w := post(t, newTestRouter(nil, authSvc, nil, nil), "/auth/refresh",
+	w := post(t, newTestRouter(nil, authSvc, nil, nil, nil), "/auth/refresh",
 		`{"refresh_token":"this.is.not.a.valid.token"}`)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body)
+	}
+}
+
+// ── ForgotPassword / ResetPassword ───────────────────────────────────────────
+
+func TestForgotPasswordHandler_AlwaysReturns200(t *testing.T) {
+	authSvc := newTestAuthSvc()
+
+	for _, email := range []string{"alice@example.com", "unknown@example.com"} {
+		pwSvc := &mockPasswordResetService{
+			forgotPasswordFn: func(_ context.Context, _ string) error { return nil },
+		}
+		w := post(t, newTestRouter(nil, authSvc, nil, nil, pwSvc), "/auth/forgot-password",
+			`{"email":"`+email+`"}`)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d: %s", email, w.Code, w.Body)
+		}
+	}
+}
+
+func TestResetPasswordHandler_InvalidToken_Returns400(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	pwSvc := &mockPasswordResetService{
+		resetPasswordFn: func(_ context.Context, _, _ string) error {
+			return passwordreset.ErrInvalidToken
+		},
+	}
+	w := post(t, newTestRouter(nil, authSvc, nil, nil, pwSvc), "/auth/reset-password",
+		`{"token":"bad-token","password":"newsecret123"}`)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body)
+	}
+}
+
+func TestResetPasswordHandler_Success(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	pwSvc := &mockPasswordResetService{
+		resetPasswordFn: func(_ context.Context, _, _ string) error { return nil },
+	}
+	w := post(t, newTestRouter(nil, authSvc, nil, nil, pwSvc), "/auth/reset-password",
+		`{"token":"good-token","password":"newsecret123"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
 	}
 }
 
@@ -282,7 +342,7 @@ func TestGetUserByIDHandler_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := get(t, newTestRouter(nil, authSvc, getUserByIDUC, nil), "/users/me", pair.AccessToken)
+	w := get(t, newTestRouter(nil, authSvc, getUserByIDUC, nil, nil), "/users/me", pair.AccessToken)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
@@ -299,7 +359,7 @@ func TestGetUserByIDHandler_Success(t *testing.T) {
 func TestGetUserByIDHandler_Unauthenticated(t *testing.T) {
 	authSvc := newTestAuthSvc()
 
-	w := get(t, newTestRouter(nil, authSvc, nil, nil), "/users/me", "")
+	w := get(t, newTestRouter(nil, authSvc, nil, nil, nil), "/users/me", "")
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body)
@@ -343,7 +403,7 @@ func TestUpdateUserByIDHandler_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := patch(t, newTestRouter(nil, authSvc, nil, updateUserByIDUC), "/users/me", pair.AccessToken,
+	w := patch(t, newTestRouter(nil, authSvc, nil, updateUserByIDUC, nil), "/users/me", pair.AccessToken,
 		`{"username":"newname"}`)
 
 	if w.Code != http.StatusOK {
@@ -361,7 +421,7 @@ func TestUpdateUserByIDHandler_Success(t *testing.T) {
 func TestUpdateUserByIDHandler_Unauthenticated(t *testing.T) {
 	authSvc := newTestAuthSvc()
 
-	w := patch(t, newTestRouter(nil, authSvc, nil, nil), "/users/me", "", `{"username":"newname"}`)
+	w := patch(t, newTestRouter(nil, authSvc, nil, nil, nil), "/users/me", "", `{"username":"newname"}`)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body)
@@ -383,7 +443,7 @@ func TestUpdateUserByIDHandler_DuplicateEmail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := patch(t, newTestRouter(nil, authSvc, nil, updateUserByIDUC), "/users/me", pair.AccessToken,
+	w := patch(t, newTestRouter(nil, authSvc, nil, updateUserByIDUC, nil), "/users/me", pair.AccessToken,
 		`{"email":"taken@example.com"}`)
 
 	if w.Code != http.StatusUnprocessableEntity {

@@ -16,10 +16,11 @@ import (
 
 // mockRepo is an in-memory Repository stub for unit tests.
 type mockRepo struct {
-	createFn     func(context.Context, string, string, string, auth.Role) (*user.User, error)
-	getByEmailFn func(context.Context, string) (*user.User, error)
-	getByIDFn    func(context.Context, string) (*user.User, error)
-	updateFn     func(context.Context, string, *string, *string) (*user.User, error)
+	createFn         func(context.Context, string, string, string, auth.Role) (*user.User, error)
+	getByEmailFn     func(context.Context, string) (*user.User, error)
+	getByIDFn        func(context.Context, string) (*user.User, error)
+	updateFn         func(context.Context, string, *string, *string) (*user.User, error)
+	updatePasswordFn func(context.Context, string, string) error
 }
 
 func (m *mockRepo) Create(ctx context.Context, username, email, passwordHash string, role auth.Role) (*user.User, error) {
@@ -33,6 +34,12 @@ func (m *mockRepo) GetByID(ctx context.Context, id string) (*user.User, error) {
 }
 func (m *mockRepo) Update(ctx context.Context, id string, username, email *string) (*user.User, error) {
 	return m.updateFn(ctx, id, username, email)
+}
+func (m *mockRepo) UpdatePassword(ctx context.Context, id, passwordHash string) error {
+	if m.updatePasswordFn == nil {
+		return nil
+	}
+	return m.updatePasswordFn(ctx, id, passwordHash)
 }
 
 func newTestAuthSvc() *auth.Service {

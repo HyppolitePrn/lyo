@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/deep_links/deep_link_listener.dart';
 import 'core/features/feature_flags_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/lyo_theme.dart';
@@ -9,7 +10,7 @@ import 'features/broadcaster/providers/broadcaster_notifier.dart';
 import 'features/home/providers/home_notifier.dart';
 import 'features/player/providers/player_notifier.dart';
 
-void main() {
+Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
@@ -22,6 +23,7 @@ void main() {
       child: const LyoApp(),
     ),
   );
+  await DeepLinkListener(appRouter).init();
 }
 
 class LyoApp extends StatelessWidget {

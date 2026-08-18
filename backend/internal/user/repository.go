@@ -23,6 +23,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id string) (*User, error)
 	// Update applies a partial update: nil fields are left untouched.
 	Update(ctx context.Context, id string, username, email *string) (*User, error)
+	UpdatePassword(ctx context.Context, id, passwordHash string) error
 }
 
 type pgRepo struct {
@@ -105,6 +106,22 @@ func (r *pgRepo) Update(ctx context.Context, id string, username, email *string)
 		return nil, ErrNotFound
 	}
 	return u, err
+}
+
+func (r *pgRepo) UpdatePassword(ctx context.Context, id, passwordHash string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbQueryTimeout)
+	defer cancel()
+
+	const q = `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, q, id, passwordHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func scanUser(row pgx.Row) (*User, error) {

@@ -15,6 +15,7 @@ type Config struct {
 	Auth     AuthConfig
 	Obs      ObsConfig
 	Stream   StreamConfig
+	Mail     MailConfig
 }
 
 type ServerConfig struct {
@@ -37,14 +38,22 @@ type AuthConfig struct {
 }
 
 type ObsConfig struct {
-	LogLevel        string
-	ServiceName     string
-	OTLPEndpoint    string
+	LogLevel     string
+	ServiceName  string
+	OTLPEndpoint string
 }
 
 type StreamConfig struct {
 	MaxListeners int
 	BufferSize   int
+}
+
+type MailConfig struct {
+	Host string
+	Port int
+	User string
+	Pass string
+	From string
 }
 
 // Load reads all configuration from environment variables.
@@ -74,6 +83,13 @@ func Load() (*Config, error) {
 		Stream: StreamConfig{
 			MaxListeners: getInt("STREAM_MAX_LISTENERS", 500),
 			BufferSize:   getInt("STREAM_BUFFER_SIZE", 65536),
+		},
+		Mail: MailConfig{
+			Host: getEnv("SMTP_HOST", ""),
+			Port: getInt("SMTP_PORT", 587),
+			User: getEnv("SMTP_USER", ""),
+			Pass: getEnv("SMTP_PASS", ""),
+			From: getEnv("EMAIL_FROM", "noreply@lyo.app"),
 		},
 	}
 	return cfg, nil

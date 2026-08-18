@@ -45,6 +45,8 @@ class AuthNotifier extends ChangeNotifier {
   String? role;
   String? username;
   String? email;
+  bool resetEmailSent = false;
+  bool resetPasswordSuccess = false;
 
   bool get hasAccess => isAuthenticated || isAnonymous;
   bool get isBroadcaster => role == 'broadcaster' || role == 'admin';
@@ -106,6 +108,54 @@ class AuthNotifier extends ChangeNotifier {
       role = _jwtRole(tokens.accessToken);
       notifyListeners();
       await fetchProfile();
+      return true;
+    } on ApiException catch (e) {
+      isLoading = false;
+      error = e.message;
+      notifyListeners();
+      return false;
+    } catch (_) {
+      isLoading = false;
+      error = 'Connection failed. Check your network.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> forgotPassword(String email) async {
+    isLoading = true;
+    error = null;
+    resetEmailSent = false;
+    notifyListeners();
+    try {
+      await _svc.forgotPassword(email);
+      isLoading = false;
+      resetEmailSent = true;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      isLoading = false;
+      error = e.message;
+      notifyListeners();
+      return false;
+    } catch (_) {
+      isLoading = false;
+      error = 'Connection failed. Check your network.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> resetPassword(String token, String password) async {
+    isLoading = true;
+    error = null;
+    resetPasswordSuccess = false;
+    notifyListeners();
+    try {
+      await _svc.resetPassword(token, password);
+      isLoading = false;
+      resetPasswordSuccess = true;
+      notifyListeners();
       return true;
     } on ApiException catch (e) {
       isLoading = false;
