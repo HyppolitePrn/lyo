@@ -10,6 +10,10 @@ services:
       - "${SERVER_PORT:-8080}:8080"
     env_file:
       - ../.env
+    environment:
+      # Overrides the host-facing DATABASE_URL from .env: inside the compose
+      # network "localhost" is the backend container itself, not postgres.
+      DATABASE_URL: postgres://lyo:lyo_secret@postgres:5432/lyo?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,6 +35,21 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    environment:
+      PGADMIN_DEFAULT_EMAIL: some@one.com
+      PGADMIN_DEFAULT_PASSWORD: someone
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── Observability ─────────────────────────────────────────────────────────────
@@ -79,5 +98,6 @@ services:
 
 volumes:
   postgres_data:
+  pgadmin_data:
   prometheus_data:
   grafana_data:

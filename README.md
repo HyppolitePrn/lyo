@@ -53,6 +53,17 @@ cd backend && go run ./cmd/server
 cd mobile && flutter run
 ```
 
+**Local service URLs:**
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Backend API | `http://localhost:8080` | — |
+| pgAdmin | `http://localhost:5050` | `some@one.com` / `someone` |
+| Grafana | `http://localhost:3000` | `admin` / `admin` |
+| Prometheus | `http://localhost:9090` | — |
+
+pgAdmin ships with `PGADMIN_CONFIG_SERVER_MODE: "False"` (desktop mode, no login persistence) — it's a dev-only convenience container, not present in `docker-compose.prod.yml`. Add the `postgres` service as a new server inside pgAdmin using host `postgres`, port `5432`, and the credentials from `.env`.
+
 ---
 
 ## Architecture overview
