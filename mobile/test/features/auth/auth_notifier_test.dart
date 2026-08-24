@@ -145,6 +145,92 @@ void main() {
     });
   });
 
+  group('forgotPassword', () {
+    test('success — sets resetEmailSent true', () async {
+      when(
+        () => mockApi.post('/auth/forgot-password', any()),
+      ).thenAnswer((_) async => <String, dynamic>{});
+
+      final notifier = makeNotifier();
+
+      final result = await notifier.forgotPassword('user@example.com');
+
+      expect(result, isTrue);
+      expect(notifier.resetEmailSent, isTrue);
+      expect(notifier.error, isNull);
+    });
+
+    test('backend error — sets error from backend', () async {
+      when(
+        () => mockApi.post('/auth/forgot-password', any()),
+      ).thenThrow(const ApiException(400, 'Invalid email'));
+
+      final notifier = makeNotifier();
+
+      final result = await notifier.forgotPassword('bad');
+
+      expect(result, isFalse);
+      expect(notifier.resetEmailSent, isFalse);
+      expect(notifier.error, 'Invalid email');
+    });
+
+    test('network failure — sets generic error message', () async {
+      when(
+        () => mockApi.post('/auth/forgot-password', any()),
+      ).thenThrow(Exception('connection refused'));
+
+      final notifier = makeNotifier();
+
+      final result = await notifier.forgotPassword('user@example.com');
+
+      expect(result, isFalse);
+      expect(notifier.error, contains('network'));
+    });
+  });
+
+  group('resetPassword', () {
+    test('success — sets resetPasswordSuccess true', () async {
+      when(
+        () => mockApi.post('/auth/reset-password', any()),
+      ).thenAnswer((_) async => <String, dynamic>{});
+
+      final notifier = makeNotifier();
+
+      final result = await notifier.resetPassword('tok', 'newpassword123');
+
+      expect(result, isTrue);
+      expect(notifier.resetPasswordSuccess, isTrue);
+      expect(notifier.error, isNull);
+    });
+
+    test('invalid or expired token — sets error from backend', () async {
+      when(
+        () => mockApi.post('/auth/reset-password', any()),
+      ).thenThrow(const ApiException(400, 'invalid or expired token'));
+
+      final notifier = makeNotifier();
+
+      final result = await notifier.resetPassword('bad-tok', 'newpassword123');
+
+      expect(result, isFalse);
+      expect(notifier.resetPasswordSuccess, isFalse);
+      expect(notifier.error, 'invalid or expired token');
+    });
+
+    test('network failure — sets generic error message', () async {
+      when(
+        () => mockApi.post('/auth/reset-password', any()),
+      ).thenThrow(Exception('connection refused'));
+
+      final notifier = makeNotifier();
+
+      final result = await notifier.resetPassword('tok', 'newpassword123');
+
+      expect(result, isFalse);
+      expect(notifier.error, contains('network'));
+    });
+  });
+
   group('continueAnonymously', () {
     test('sets isAnonymous true without touching isAuthenticated', () {
       final notifier = makeNotifier();

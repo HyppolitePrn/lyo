@@ -11,12 +11,16 @@ services:
     env_file:
       - ../.env
     environment:
-      # Overrides the host-facing DATABASE_URL from .env: inside the compose
-      # network "localhost" is the backend container itself, not postgres.
+      # Overrides the host-facing DATABASE_URL/SMTP_HOST from .env: inside the
+      # compose network "localhost" is the backend container itself, not its peers.
       DATABASE_URL: postgres://lyo:lyo_secret@postgres:5432/lyo?sslmode=disable
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     restart: unless-stopped
 
   # ── Database ─────────────────────────────────────────────────────────────────
@@ -35,6 +39,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  # ── Mail (dev SMTP catcher — no auth, view sent mail at http://localhost:8025) ─
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
     restart: unless-stopped
 
   pgadmin:

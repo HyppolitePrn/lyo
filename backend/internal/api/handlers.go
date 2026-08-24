@@ -12,6 +12,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/user"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
@@ -36,6 +37,12 @@ type FeatureService interface {
 	IsEnabled(ctx context.Context, name string) bool
 }
 
+// PasswordResetService is the subset of passwordreset.Service consumed by the HTTP handlers.
+type PasswordResetService interface {
+	ForgotPassword(ctx context.Context, email string) error
+	ResetPassword(ctx context.Context, token, password string) error
+}
+
 type GetUserByIDUsecase interface {
 	Execute(ctx context.Context, id string) (*user.User, error)
 }
@@ -51,6 +58,7 @@ type Handlers struct {
 	authSvc          *auth.Service
 	streamSvc        StreamService
 	featureSvc       FeatureService
+	pwResetSvc       PasswordResetService
 	getUserByIDUC    GetUserByIDUsecase
 	updateUserByIDUC UpdateUserByIDUsecase
 	logger           *slog.Logger
@@ -61,6 +69,7 @@ func NewHandlers(
 	authSvc *auth.Service,
 	streamSvc StreamService,
 	featureSvc FeatureService,
+	pwResetSvc PasswordResetService,
 	getUserByIDUC GetUserByIDUsecase,
 	updateUserByIDUC UpdateUserByIDUsecase,
 	logger *slog.Logger,
@@ -70,6 +79,7 @@ func NewHandlers(
 		authSvc:          authSvc,
 		streamSvc:        streamSvc,
 		featureSvc:       featureSvc,
+		pwResetSvc:       pwResetSvc,
 		getUserByIDUC:    getUserByIDUC,
 		updateUserByIDUC: updateUserByIDUC,
 		logger:           logger,
@@ -204,6 +214,42 @@ func (h *Handlers) RefreshToken(_ context.Context, req RefreshTokenRequestObject
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
 	}), nil
+}
+
+func (h *Handlers) ForgotPassword(ctx context.Context, req ForgotPasswordRequestObject) (ForgotPasswordResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	if err := h.pwResetSvc.ForgotPassword(ctx, string(req.Body.Email)); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "forgot password timeout", "route", "POST /auth/forgot-password")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		h.logger.ErrorContext(ctx, "forgot password failed", "err", err)
+	}
+
+	// Always 200: whether the email exists must not be observable.
+	return ForgotPassword200JSONResponse{Message: "if that email exists, a reset link has been sent"}, nil
+}
+
+func (h *Handlers) ResetPassword(ctx context.Context, req ResetPasswordRequestObject) (ResetPasswordResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	if err := h.pwResetSvc.ResetPassword(ctx, req.Body.Token, req.Body.Password); err != nil {
+		if errors.Is(err, passwordreset.ErrInvalidToken) {
+			return ResetPassword400JSONResponse{
+				BadRequestJSONResponse: BadRequestJSONResponse{Code: 400, Message: "invalid or expired token"},
+			}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "reset password timeout", "route", "POST /auth/reset-password")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	return ResetPassword200JSONResponse{Message: "password updated"}, nil
 }
 
 func (h *Handlers) GetUserByID(ctx context.Context, _ GetUserByIDRequestObject) (GetUserByIDResponseObject, error) {
