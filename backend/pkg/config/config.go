@@ -16,6 +16,7 @@ type Config struct {
 	Obs      ObsConfig
 	Stream   StreamConfig
 	Mail     MailConfig
+	S3       S3Config
 }
 
 type ServerConfig struct {
@@ -56,6 +57,26 @@ type MailConfig struct {
 	From string
 }
 
+// S3Config configures track audio storage against any S3-compatible backend
+// (real AWS S3 or a self-hosted server such as MinIO). Left empty, the
+// server still starts — only POST /tracks/upload-url and S3 object deletion
+// fail, and both sit behind the track_uploads feature flag.
+//
+// Endpoint is used by the backend itself (e.g. a Docker-internal MinIO
+// hostname). PublicEndpoint is embedded in presigned upload URLs and in
+// PublicURL()/KeyFromURL() — both are consumed directly by the mobile
+// client, so it must be a host reachable from wherever the app runs
+// (emulator/physical device/public internet). If PublicEndpoint is empty it
+// falls back to Endpoint. If both are empty, real AWS S3 is used.
+type S3Config struct {
+	BucketName      string
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+	Endpoint        string
+	PublicEndpoint  string
+}
+
 // Load reads all configuration from environment variables.
 func Load() (*Config, error) {
 	cfg := &Config{
@@ -90,6 +111,14 @@ func Load() (*Config, error) {
 			User: getEnv("SMTP_USER", ""),
 			Pass: getEnv("SMTP_PASS", ""),
 			From: getEnv("EMAIL_FROM", "noreply@lyo.app"),
+		},
+		S3: S3Config{
+			BucketName:      getEnv("S3_BUCKET_NAME", ""),
+			Region:          getEnv("S3_REGION", ""),
+			AccessKeyID:     getEnv("S3_ACCESS_KEY_ID", ""),
+			SecretAccessKey: getEnv("S3_SECRET_ACCESS_KEY", ""),
+			Endpoint:        getEnv("S3_ENDPOINT", ""),
+			PublicEndpoint:  getEnv("S3_PUBLIC_ENDPOINT", ""),
 		},
 	}
 	return cfg, nil

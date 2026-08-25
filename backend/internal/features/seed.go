@@ -4,6 +4,7 @@ package features
 // Add new flags here before implementing the feature itself.
 var Seeds = []Flag{
 	{Name: "live_streaming", Enabled: true, Description: "Live broadcast feature"},
+	{Name: "track_uploads", Enabled: true, Description: "Broadcaster track audio upload via presigned S3 URLs"},
 	{Name: "chat_websocket", Enabled: false, Description: "Live chat between listeners of the same stream"},
 	{Name: "recommendations", Enabled: false, Description: "Listen-history-based track recommendations"},
 	{Name: "offline_mode", Enabled: false, Description: "Playlist caching for offline playback"},

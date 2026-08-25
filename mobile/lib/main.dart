@@ -9,6 +9,7 @@ import 'features/auth/providers/auth_notifier.dart';
 import 'features/broadcaster/providers/broadcaster_notifier.dart';
 import 'features/home/providers/home_notifier.dart';
 import 'features/player/providers/player_notifier.dart';
+import 'features/track/providers/upload_track_notifier.dart';
 
 Future<void> main() async {
   runApp(
@@ -19,6 +20,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => HomeNotifier()),
         ChangeNotifierProvider(create: (_) => PlayerNotifier()),
         ChangeNotifierProvider(create: (_) => BroadcasterNotifier()),
+        ChangeNotifierProvider(create: (_) => UploadTrackNotifier()),
       ],
       child: const LyoApp(),
     ),

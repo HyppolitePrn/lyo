@@ -14,6 +14,7 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
+	"github.com/hyppoliteprn/lyo/internal/track"
 	"github.com/hyppoliteprn/lyo/internal/user"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
 )
@@ -43,6 +44,15 @@ type PasswordResetService interface {
 	ResetPassword(ctx context.Context, token, password string) error
 }
 
+// TrackService is the subset of track.Service consumed by the HTTP handlers.
+type TrackService interface {
+	ListTracks(ctx context.Context, broadcasterID string, page, limit int) ([]track.Track, error)
+	CreateTrack(ctx context.Context, broadcasterID, title, artist, audioURL string, durationSeconds int) (*track.Track, error)
+	GetTrack(ctx context.Context, id string) (*track.Track, error)
+	DeleteTrack(ctx context.Context, id, requesterID string) error
+	PresignUpload(ctx context.Context, broadcasterID, filename string) (uploadURL, key, audioURL string, err error)
+}
+
 type GetUserByIDUsecase interface {
 	Execute(ctx context.Context, id string) (*user.User, error)
 }
@@ -59,6 +69,7 @@ type Handlers struct {
 	streamSvc        StreamService
 	featureSvc       FeatureService
 	pwResetSvc       PasswordResetService
+	trackSvc         TrackService
 	getUserByIDUC    GetUserByIDUsecase
 	updateUserByIDUC UpdateUserByIDUsecase
 	logger           *slog.Logger
@@ -70,6 +81,7 @@ func NewHandlers(
 	streamSvc StreamService,
 	featureSvc FeatureService,
 	pwResetSvc PasswordResetService,
+	trackSvc TrackService,
 	getUserByIDUC GetUserByIDUsecase,
 	updateUserByIDUC UpdateUserByIDUsecase,
 	logger *slog.Logger,
@@ -80,6 +92,7 @@ func NewHandlers(
 		streamSvc:        streamSvc,
 		featureSvc:       featureSvc,
 		pwResetSvc:       pwResetSvc,
+		trackSvc:         trackSvc,
 		getUserByIDUC:    getUserByIDUC,
 		updateUserByIDUC: updateUserByIDUC,
 		logger:           logger,
@@ -107,6 +120,29 @@ func streamToAPI(s *streaming.Stream) (Stream, error) {
 	}
 	st.EndedAt = s.EndedAt
 	return st, nil
+}
+
+func trackToAPI(t *track.Track) (Track, error) {
+	id, err := uuid.Parse(t.ID)
+	if err != nil {
+		return Track{}, fmt.Errorf("invalid track ID %q: %w", t.ID, err)
+	}
+	bcID, err := uuid.Parse(t.BroadcasterID)
+	if err != nil {
+		return Track{}, fmt.Errorf("invalid broadcaster ID %q: %w", t.BroadcasterID, err)
+	}
+	tr := Track{
+		Id:              openapi_types.UUID(id),
+		BroadcasterId:   openapi_types.UUID(bcID),
+		Title:           t.Title,
+		AudioUrl:        t.AudioURL,
+		DurationSeconds: t.DurationSeconds,
+		CreatedAt:       t.CreatedAt,
+	}
+	if t.Artist != "" {
+		tr.Artist = &t.Artist
+	}
+	return tr, nil
 }
 
 func userToAPI(u *user.User) User {
@@ -346,20 +382,166 @@ func (h *Handlers) UnfavoritePlaylist(_ context.Context, _ UnfavoritePlaylistReq
 	return nil, errNotImplemented
 }
 
-func (h *Handlers) ListTracks(_ context.Context, _ ListTracksRequestObject) (ListTracksResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) ListTracks(ctx context.Context, req ListTracksRequestObject) (ListTracksResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	broadcasterID := ""
+	if req.Params.BroadcasterId != nil {
+		broadcasterID = req.Params.BroadcasterId.String()
+	}
+	page, limit := 1, 20
+	if req.Params.Page != nil {
+		page = *req.Params.Page
+	}
+	if req.Params.Limit != nil {
+		limit = *req.Params.Limit
+	}
+
+	tracks, err := h.trackSvc.ListTracks(ctx, broadcasterID, page, limit)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "list tracks timeout", "route", "GET /tracks")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	items := make([]Track, 0, len(tracks))
+	for i := range tracks {
+		item, err := trackToAPI(&tracks[i])
+		if err != nil {
+			return nil, fmt.Errorf("marshal track: %w", err)
+		}
+		items = append(items, item)
+	}
+	return ListTracks200JSONResponse{Items: items}, nil
 }
 
-func (h *Handlers) CreateTrack(_ context.Context, _ CreateTrackRequestObject) (CreateTrackResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) CreateTrack(ctx context.Context, req CreateTrackRequestObject) (CreateTrackResponseObject, error) {
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok || !claims.Role.AtLeast(auth.RoleBroadcaster) {
+		return CreateTrack403JSONResponse{
+			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: "forbidden"},
+		}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	artist := ""
+	if req.Body.Artist != nil {
+		artist = *req.Body.Artist
+	}
+	duration := 0
+	if req.Body.DurationSeconds != nil {
+		duration = *req.Body.DurationSeconds
+	}
+
+	t, err := h.trackSvc.CreateTrack(ctx, claims.UserID, req.Body.Title, artist, req.Body.AudioUrl, duration)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "create track timeout", "route", "POST /tracks")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	apiTrack, err := trackToAPI(t)
+	if err != nil {
+		return nil, fmt.Errorf("marshal track: %w", err)
+	}
+	return CreateTrack201JSONResponse(apiTrack), nil
 }
 
-func (h *Handlers) GetTrack(_ context.Context, _ GetTrackRequestObject) (GetTrackResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) GetTrack(ctx context.Context, req GetTrackRequestObject) (GetTrackResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	t, err := h.trackSvc.GetTrack(ctx, req.Id.String())
+	if err != nil {
+		if errors.Is(err, track.ErrNotFound) {
+			return GetTrack404JSONResponse{
+				NotFoundJSONResponse: NotFoundJSONResponse{Code: 404, Message: "track not found"},
+			}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "get track timeout", "route", "GET /tracks/{id}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	apiTrack, err := trackToAPI(t)
+	if err != nil {
+		return nil, fmt.Errorf("marshal track: %w", err)
+	}
+	return GetTrack200JSONResponse(apiTrack), nil
 }
 
-func (h *Handlers) DeleteTrack(_ context.Context, _ DeleteTrackRequestObject) (DeleteTrackResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) DeleteTrack(ctx context.Context, req DeleteTrackRequestObject) (DeleteTrackResponseObject, error) {
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok || !claims.Role.AtLeast(auth.RoleBroadcaster) {
+		return DeleteTrack403JSONResponse{
+			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: "forbidden"},
+		}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Admins can delete any track; broadcasters only their own.
+	requesterID := claims.UserID
+	if claims.Role.AtLeast(auth.RoleAdmin) {
+		requesterID = ""
+	}
+
+	err := h.trackSvc.DeleteTrack(ctx, req.Id.String(), requesterID)
+	if err != nil {
+		if errors.Is(err, track.ErrNotFound) {
+			return DeleteTrack404JSONResponse{
+				NotFoundJSONResponse: NotFoundJSONResponse{Code: 404, Message: "track not found"},
+			}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "delete track timeout", "route", "DELETE /tracks/{id}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	return DeleteTrack204Response{}, nil
+}
+
+func (h *Handlers) CreateTrackUploadURL(ctx context.Context, req CreateTrackUploadURLRequestObject) (CreateTrackUploadURLResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "track_uploads") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "track uploads are disabled"}
+	}
+
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok || !claims.Role.AtLeast(auth.RoleBroadcaster) {
+		return CreateTrackUploadURL403JSONResponse{
+			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: "forbidden"},
+		}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	uploadURL, key, audioURL, err := h.trackSvc.PresignUpload(ctx, claims.UserID, req.Body.Filename)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "presign upload timeout", "route", "POST /tracks/upload-url")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	return CreateTrackUploadURL200JSONResponse{
+		UploadUrl: uploadURL,
+		Key:       key,
+		AudioUrl:  audioURL,
+	}, nil
 }
 
 func (h *Handlers) ListStreams(ctx context.Context, _ ListStreamsRequestObject) (ListStreamsResponseObject, error) {

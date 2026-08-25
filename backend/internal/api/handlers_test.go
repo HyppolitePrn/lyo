@@ -21,6 +21,7 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
+	"github.com/hyppoliteprn/lyo/internal/track"
 	"github.com/hyppoliteprn/lyo/internal/user"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
 )
@@ -92,6 +93,25 @@ func (m *mockPasswordResetService) ResetPassword(ctx context.Context, token, pas
 	return m.resetPasswordFn(ctx, token, password)
 }
 
+// nopTrackSvc satisfies api.TrackService for tests that don't exercise tracks.
+type nopTrackSvc struct{}
+
+func (nopTrackSvc) ListTracks(_ context.Context, _ string, _, _ int) ([]track.Track, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopTrackSvc) CreateTrack(_ context.Context, _, _, _, _ string, _ int) (*track.Track, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopTrackSvc) GetTrack(_ context.Context, _ string) (*track.Track, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopTrackSvc) DeleteTrack(_ context.Context, _, _ string) error {
+	return errors.New("not implemented")
+}
+func (nopTrackSvc) PresignUpload(_ context.Context, _, _ string) (string, string, string, error) {
+	return "", "", "", errors.New("not implemented")
+}
+
 func newTestRouter(
 	userSvc api.UserService,
 	authSvc *auth.Service,
@@ -102,7 +122,7 @@ func newTestRouter(
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(authSvc))
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, getUserByIDUC, updateUserByIDUC, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, nopTrackSvc{}, getUserByIDUC, updateUserByIDUC, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {

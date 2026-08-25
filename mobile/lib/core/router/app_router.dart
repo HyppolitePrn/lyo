@@ -12,6 +12,7 @@ import '../../features/player/screens/player_screen.dart';
 import '../../features/player/screens/recorded_player_screen.dart';
 import '../../features/player/screens/stream_list_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
+import '../../features/track/screens/upload_track_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/splash',
@@ -71,6 +72,10 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/broadcaster',
       builder: (context, state) => const BroadcasterScreen(),
+    ),
+    GoRoute(
+      path: '/upload-track',
+      builder: (context, state) => const UploadTrackScreen(),
     ),
   ],
 );
