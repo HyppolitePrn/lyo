@@ -162,6 +162,23 @@ type PlaylistList struct {
 	Items []Playlist `json:"items"`
 }
 
+// PresignUploadRequest defines model for PresignUploadRequest.
+type PresignUploadRequest struct {
+	Filename string `json:"filename"`
+}
+
+// PresignedUploadResponse defines model for PresignedUploadResponse.
+type PresignedUploadResponse struct {
+	// AudioUrl Public URL to pass as audio_url when calling POST /tracks once the upload completes
+	AudioUrl string `json:"audio_url"`
+
+	// Key S3 object key
+	Key string `json:"key"`
+
+	// UploadUrl PUT the audio file here
+	UploadUrl string `json:"upload_url"`
+}
+
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
@@ -277,6 +294,8 @@ type ListStreamsParams struct {
 // ListTracksParams defines parameters for ListTracks.
 type ListTracksParams struct {
 	BroadcasterId *openapi_types.UUID `form:"broadcaster_id,omitempty" json:"broadcaster_id,omitempty"`
+	Page          *int                `form:"page,omitempty" json:"page,omitempty"`
+	Limit         *int                `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ToggleFeatureFlagJSONRequestBody defines body for ToggleFeatureFlag for application/json ContentType.
@@ -311,6 +330,9 @@ type CreateStreamJSONRequestBody = CreateStreamRequest
 
 // CreateTrackJSONRequestBody defines body for CreateTrack for application/json ContentType.
 type CreateTrackJSONRequestBody = CreateTrackRequest
+
+// CreateTrackUploadURLJSONRequestBody defines body for CreateTrackUploadURL for application/json ContentType.
+type CreateTrackUploadURLJSONRequestBody = PresignUploadRequest
 
 // UpdateUserByIDJSONRequestBody defines body for UpdateUserByID for application/json ContentType.
 type UpdateUserByIDJSONRequestBody = UpdateUserRequest
@@ -380,6 +402,9 @@ type ServerInterface interface {
 	// Upload a new track (broadcaster+ only)
 	// (POST /tracks)
 	CreateTrack(w http.ResponseWriter, r *http.Request)
+	// Get a presigned S3 PUT URL for uploading track audio (broadcaster+ only)
+	// (POST /tracks/upload-url)
+	CreateTrackUploadURL(w http.ResponseWriter, r *http.Request)
 	// Delete a track (owner or admin)
 	// (DELETE /tracks/{id})
 	DeleteTrack(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
@@ -539,6 +564,12 @@ func (_ Unimplemented) ListTracks(w http.ResponseWriter, r *http.Request, params
 // Upload a new track (broadcaster+ only)
 // (POST /tracks)
 func (_ Unimplemented) CreateTrack(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a presigned S3 PUT URL for uploading track audio (broadcaster+ only)
+// (POST /tracks/upload-url)
+func (_ Unimplemented) CreateTrackUploadURL(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1069,6 +1100,22 @@ func (siw *ServerInterfaceWrapper) ListTracks(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListTracks(w, r, params)
 	}))
@@ -1091,6 +1138,26 @@ func (siw *ServerInterfaceWrapper) CreateTrack(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateTrack(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTrackUploadURL operation middleware
+func (siw *ServerInterfaceWrapper) CreateTrackUploadURL(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTrackUploadURL(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1557,6 +1624,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/tracks", wrapper.CreateTrack)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/tracks/upload-url", wrapper.CreateTrackUploadURL)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/tracks/{id}", wrapper.DeleteTrack)
@@ -2257,6 +2327,41 @@ func (response CreateTrack403JSONResponse) VisitCreateTrackResponse(w http.Respo
 	return json.NewEncoder(w).Encode(response)
 }
 
+type CreateTrackUploadURLRequestObject struct {
+	Body *CreateTrackUploadURLJSONRequestBody
+}
+
+type CreateTrackUploadURLResponseObject interface {
+	VisitCreateTrackUploadURLResponse(w http.ResponseWriter) error
+}
+
+type CreateTrackUploadURL200JSONResponse PresignedUploadResponse
+
+func (response CreateTrackUploadURL200JSONResponse) VisitCreateTrackUploadURLResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateTrackUploadURL401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateTrackUploadURL401JSONResponse) VisitCreateTrackUploadURLResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateTrackUploadURL403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateTrackUploadURL403JSONResponse) VisitCreateTrackUploadURLResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type DeleteTrackRequestObject struct {
 	Id openapi_types.UUID `json:"id"`
 }
@@ -2630,6 +2735,9 @@ type StrictServerInterface interface {
 	// Upload a new track (broadcaster+ only)
 	// (POST /tracks)
 	CreateTrack(ctx context.Context, request CreateTrackRequestObject) (CreateTrackResponseObject, error)
+	// Get a presigned S3 PUT URL for uploading track audio (broadcaster+ only)
+	// (POST /tracks/upload-url)
+	CreateTrackUploadURL(ctx context.Context, request CreateTrackUploadURLRequestObject) (CreateTrackUploadURLResponseObject, error)
 	// Delete a track (owner or admin)
 	// (DELETE /tracks/{id})
 	DeleteTrack(ctx context.Context, request DeleteTrackRequestObject) (DeleteTrackResponseObject, error)
@@ -3286,6 +3394,37 @@ func (sh *strictHandler) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateTrackResponseObject); ok {
 		if err := validResponse.VisitCreateTrackResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateTrackUploadURL operation middleware
+func (sh *strictHandler) CreateTrackUploadURL(w http.ResponseWriter, r *http.Request) {
+	var request CreateTrackUploadURLRequestObject
+
+	var body CreateTrackUploadURLJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateTrackUploadURL(ctx, request.(CreateTrackUploadURLRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateTrackUploadURL")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateTrackUploadURLResponseObject); ok {
+		if err := validResponse.VisitCreateTrackUploadURLResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

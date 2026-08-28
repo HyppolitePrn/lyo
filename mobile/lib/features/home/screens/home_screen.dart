@@ -12,6 +12,7 @@ import '../providers/home_notifier.dart';
 import '../widgets/live_eq_widget.dart';
 import '../widgets/lyo_artwork_tile.dart';
 import '../widgets/mini_player.dart';
+import 'browse_tab.dart';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -204,8 +205,7 @@ class HomeScreen extends StatelessWidget {
   ) {
     switch (home.selectedTab) {
       case 1:
-        return _StubBody(
-            label: 'Browse', icon: Icons.grid_view, dark: dark);
+        return const BrowseTab();
       case 2:
         return _StubBody(
             label: 'Search', icon: Icons.search, dark: dark);

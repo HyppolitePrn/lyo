@@ -26,7 +26,9 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/observability"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
+	"github.com/hyppoliteprn/lyo/internal/storage"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
+	"github.com/hyppoliteprn/lyo/internal/track"
 	"github.com/hyppoliteprn/lyo/internal/user"
 	userusecase "github.com/hyppoliteprn/lyo/internal/user/usecase"
 	"github.com/hyppoliteprn/lyo/migrations"
@@ -112,6 +114,14 @@ func main() {
 	streamRepo := streaming.NewRepository(pool)
 	streamSvc := streaming.NewService(streamRepo, cfg.Stream.BufferSize, logger)
 
+	s3Storage, err := storage.New(cfg.S3)
+	if err != nil {
+		logger.Error("cannot init s3 storage", "err", err)
+		os.Exit(1)
+	}
+	trackRepo := track.NewRepository(pool)
+	trackSvc := track.NewService(trackRepo, s3Storage)
+
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
@@ -127,7 +137,7 @@ func main() {
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, getUserByIDUC, updateUserByIDUC, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, getUserByIDUC, updateUserByIDUC, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,

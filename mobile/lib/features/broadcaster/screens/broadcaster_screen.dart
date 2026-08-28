@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/features/feature_flags_provider.dart';
@@ -109,6 +110,14 @@ class _BroadcasterScreenState extends State<BroadcasterScreen> {
             fontWeight: FontWeight.w700,
           ),
         ),
+        actions: [
+          if (flags.isEnabled('track_uploads'))
+            IconButton(
+              icon: Icon(Icons.upload_file_outlined, color: textPrimary),
+              tooltip: 'Upload a track',
+              onPressed: () => context.push('/upload-track'),
+            ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(

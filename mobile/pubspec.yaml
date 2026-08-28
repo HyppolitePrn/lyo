@@ -42,6 +42,7 @@ dependencies:
   audio_session: ^0.1.21
   record: ^6.2.0
   permission_handler: ^11.3.1
+  file_picker: ^8.1.2
 
 dev_dependencies:
   flutter_test:

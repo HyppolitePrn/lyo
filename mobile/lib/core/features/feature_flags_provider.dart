@@ -5,6 +5,7 @@ class FeatureFlags {
 
   static const Map<String, bool> _flags = {
     'live_streaming': true,
+    'track_uploads': true,
     'chat_websocket': false,
     'recommendations': false,
     'offline_mode': false,
