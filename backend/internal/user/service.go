@@ -71,6 +71,30 @@ func (s *Service) GetByID(ctx context.Context, id string) (*User, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+func (s *Service) AddFavoriteTrack(ctx context.Context, userID, trackID string) error {
+	return s.repo.AddFavoriteTrack(ctx, userID, trackID)
+}
+
+func (s *Service) RemoveFavoriteTrack(ctx context.Context, userID, trackID string) error {
+	return s.repo.RemoveFavoriteTrack(ctx, userID, trackID)
+}
+
+func (s *Service) AddFavoriteStream(ctx context.Context, userID, streamID string) error {
+	return s.repo.AddFavoriteStream(ctx, userID, streamID)
+}
+
+func (s *Service) RemoveFavoriteStream(ctx context.Context, userID, streamID string) error {
+	return s.repo.RemoveFavoriteStream(ctx, userID, streamID)
+}
+
+func (s *Service) AddFavoritePlaylist(ctx context.Context, userID, playlistID string) error {
+	return s.repo.AddFavoritePlaylist(ctx, userID, playlistID)
+}
+
+func (s *Service) RemoveFavoritePlaylist(ctx context.Context, userID, playlistID string) error {
+	return s.repo.RemoveFavoritePlaylist(ctx, userID, playlistID)
+}
+
 func getUserIDString(u *User) (string, error) {
 	b, err := u.ID.Value()
 	if err != nil {

@@ -174,13 +174,16 @@ components:
     # ── Playlists ─────────────────────────────────────────────────────────────
     Playlist:
       type: object
-      required: [id, owner_id, title, track_ids, created_at, updated_at]
+      required: [id, owner_id, title, track_ids, is_public, created_at, updated_at]
       properties:
         id:          { type: string, format: uuid }
         owner_id:    { type: string, format: uuid }
         title:       { type: string }
         description: { type: string }
         track_ids:   { type: array, items: { type: string, format: uuid } }
+        # Populated (in track_ids order) only by GET /playlists/{id}; omitted elsewhere.
+        tracks:      { type: array, items: { $ref: '#/components/schemas/Track' } }
+        is_public:   { type: boolean }
         created_at:  { type: string, format: date-time }
         updated_at:  { type: string, format: date-time }
 
@@ -190,12 +193,14 @@ components:
       properties:
         title:       { type: string, minLength: 1, maxLength: 120 }
         description: { type: string, maxLength: 500 }
+        is_public:   { type: boolean, default: false }
 
     UpdatePlaylistRequest:
       type: object
       properties:
         title:       { type: string, minLength: 1, maxLength: 120 }
         description: { type: string, maxLength: 500 }
+        is_public:   { type: boolean }
 
     PlaylistList:
       type: object
@@ -208,6 +213,14 @@ components:
       required: [track_id]
       properties:
         track_id: { type: string, format: uuid }
+
+    FavoritesList:
+      type: object
+      required: [tracks, streams, playlists]
+      properties:
+        tracks:    { type: array, items: { $ref: '#/components/schemas/Track' } }
+        streams:   { type: array, items: { $ref: '#/components/schemas/Stream' } }
+        playlists: { type: array, items: { $ref: '#/components/schemas/Playlist' } }
 
     # ── Feature Flags ─────────────────────────────────────────────────────────
     FeatureFlag:
@@ -406,6 +419,21 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "422": { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /users/me/favorites:
+    get:
+      operationId: ListFavorites
+      summary: List the authenticated user's favorite tracks, streams, and playlists
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Favorites, hydrated with full objects
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FavoritesList' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
 
   /users/me/favorites/tracks/{trackId}:
     parameters:

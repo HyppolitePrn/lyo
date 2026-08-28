@@ -7,8 +7,10 @@ import 'core/router/app_router.dart';
 import 'core/theme/lyo_theme.dart';
 import 'features/auth/providers/auth_notifier.dart';
 import 'features/broadcaster/providers/broadcaster_notifier.dart';
+import 'features/favorites/providers/favorites_notifier.dart';
 import 'features/home/providers/home_notifier.dart';
 import 'features/player/providers/player_notifier.dart';
+import 'features/playlist/providers/playlist_notifier.dart';
 import 'features/track/providers/upload_track_notifier.dart';
 
 Future<void> main() async {
@@ -21,6 +23,8 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => PlayerNotifier()),
         ChangeNotifierProvider(create: (_) => BroadcasterNotifier()),
         ChangeNotifierProvider(create: (_) => UploadTrackNotifier()),
+        ChangeNotifierProvider(create: (_) => PlaylistNotifier()),
+        ChangeNotifierProvider(create: (_) => FavoritesNotifier()),
       ],
       child: const LyoApp(),
     ),

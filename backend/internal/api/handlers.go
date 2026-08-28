@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
+	"github.com/hyppoliteprn/lyo/internal/playlist"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/track"
 	"github.com/hyppoliteprn/lyo/internal/user"
@@ -23,6 +25,25 @@ import (
 type UserService interface {
 	Register(ctx context.Context, username, email, password string) (auth.TokenPair, error)
 	Login(ctx context.Context, email, password string) (auth.TokenPair, error)
+	GetByID(ctx context.Context, id string) (*user.User, error)
+
+	AddFavoriteTrack(ctx context.Context, userID, trackID string) error
+	RemoveFavoriteTrack(ctx context.Context, userID, trackID string) error
+	AddFavoriteStream(ctx context.Context, userID, streamID string) error
+	RemoveFavoriteStream(ctx context.Context, userID, streamID string) error
+	AddFavoritePlaylist(ctx context.Context, userID, playlistID string) error
+	RemoveFavoritePlaylist(ctx context.Context, userID, playlistID string) error
+}
+
+// PlaylistService is the subset of playlist.Service consumed by the HTTP handlers.
+type PlaylistService interface {
+	ListByOwner(ctx context.Context, ownerID string) ([]playlist.Playlist, error)
+	Create(ctx context.Context, ownerID, title, description string, isPublic bool) (*playlist.Playlist, error)
+	Get(ctx context.Context, id string) (*playlist.Playlist, error)
+	Update(ctx context.Context, id, requesterID string, title, description *string, isPublic *bool) (*playlist.Playlist, error)
+	Delete(ctx context.Context, id, requesterID string) error
+	AddTrack(ctx context.Context, id, requesterID, trackID string) (*playlist.Playlist, error)
+	RemoveTrack(ctx context.Context, id, requesterID, trackID string) (*playlist.Playlist, error)
 }
 
 // StreamService is the subset of streaming.Service consumed by the HTTP handlers.
@@ -70,6 +91,7 @@ type Handlers struct {
 	featureSvc       FeatureService
 	pwResetSvc       PasswordResetService
 	trackSvc         TrackService
+	playlistSvc      PlaylistService
 	getUserByIDUC    GetUserByIDUsecase
 	updateUserByIDUC UpdateUserByIDUsecase
 	logger           *slog.Logger
@@ -82,6 +104,7 @@ func NewHandlers(
 	featureSvc FeatureService,
 	pwResetSvc PasswordResetService,
 	trackSvc TrackService,
+	playlistSvc PlaylistService,
 	getUserByIDUC GetUserByIDUsecase,
 	updateUserByIDUC UpdateUserByIDUsecase,
 	logger *slog.Logger,
@@ -93,6 +116,7 @@ func NewHandlers(
 		featureSvc:       featureSvc,
 		pwResetSvc:       pwResetSvc,
 		trackSvc:         trackSvc,
+		playlistSvc:      playlistSvc,
 		getUserByIDUC:    getUserByIDUC,
 		updateUserByIDUC: updateUserByIDUC,
 		logger:           logger,
@@ -170,6 +194,107 @@ func userToAPI(u *user.User) User {
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,
 	}
+}
+
+func playlistToAPI(p *playlist.Playlist) (Playlist, error) {
+	id, err := uuid.Parse(p.ID)
+	if err != nil {
+		return Playlist{}, fmt.Errorf("invalid playlist ID %q: %w", p.ID, err)
+	}
+	ownerID, err := uuid.Parse(p.OwnerID)
+	if err != nil {
+		return Playlist{}, fmt.Errorf("invalid owner ID %q: %w", p.OwnerID, err)
+	}
+	trackIDs := make([]openapi_types.UUID, 0, len(p.TrackIDs))
+	for _, tid := range p.TrackIDs {
+		parsed, err := uuid.Parse(tid)
+		if err != nil {
+			return Playlist{}, fmt.Errorf("invalid track ID %q: %w", tid, err)
+		}
+		trackIDs = append(trackIDs, openapi_types.UUID(parsed))
+	}
+
+	pl := Playlist{
+		Id:        openapi_types.UUID(id),
+		OwnerId:   openapi_types.UUID(ownerID),
+		Title:     p.Title,
+		TrackIds:  trackIDs,
+		IsPublic:  p.IsPublic,
+		CreatedAt: p.CreatedAt,
+		UpdatedAt: p.UpdatedAt,
+	}
+	if p.Description != "" {
+		pl.Description = &p.Description
+	}
+	return pl, nil
+}
+
+// pgUUIDsToStrings converts scanned uuid[] columns to plain string IDs for service calls.
+func pgUUIDsToStrings(ids []pgtype.UUID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = uuid.UUID(id.Bytes).String()
+	}
+	return out
+}
+
+// hydrateTracks looks up each ID individually via trackSvc, silently skipping any
+// that no longer exist (e.g. a favorited/playlisted track that was later deleted).
+func (h *Handlers) hydrateTracks(ctx context.Context, ids []string) ([]Track, error) {
+	tracks := make([]Track, 0, len(ids))
+	for _, id := range ids {
+		t, err := h.trackSvc.GetTrack(ctx, id)
+		if err != nil {
+			if errors.Is(err, track.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		apiTrack, err := trackToAPI(t)
+		if err != nil {
+			return nil, fmt.Errorf("marshal track: %w", err)
+		}
+		tracks = append(tracks, apiTrack)
+	}
+	return tracks, nil
+}
+
+func (h *Handlers) hydrateStreams(ctx context.Context, ids []string) ([]Stream, error) {
+	streams := make([]Stream, 0, len(ids))
+	for _, id := range ids {
+		s, err := h.streamSvc.GetStream(ctx, id)
+		if err != nil {
+			if errors.Is(err, streaming.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		apiStream, err := streamToAPI(s)
+		if err != nil {
+			return nil, fmt.Errorf("marshal stream: %w", err)
+		}
+		streams = append(streams, apiStream)
+	}
+	return streams, nil
+}
+
+func (h *Handlers) hydratePlaylists(ctx context.Context, ids []string) ([]Playlist, error) {
+	playlists := make([]Playlist, 0, len(ids))
+	for _, id := range ids {
+		p, err := h.playlistSvc.Get(ctx, id)
+		if err != nil {
+			if errors.Is(err, playlist.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		apiPlaylist, err := playlistToAPI(p)
+		if err != nil {
+			return nil, fmt.Errorf("marshal playlist: %w", err)
+		}
+		playlists = append(playlists, apiPlaylist)
+	}
+	return playlists, nil
 }
 
 func (h *Handlers) GetHealth(_ context.Context, _ GetHealthRequestObject) (GetHealthResponseObject, error) {
@@ -358,28 +483,206 @@ func (h *Handlers) UpdateUserByID(ctx context.Context, req UpdateUserByIDRequest
 	return UpdateUserByID200JSONResponse(userToAPI(u)), nil
 }
 
-func (h *Handlers) FavoriteTrack(_ context.Context, _ FavoriteTrackRequestObject) (FavoriteTrackResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) FavoriteTrack(ctx context.Context, req FavoriteTrackRequestObject) (FavoriteTrackResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "favorites") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "favorites are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return FavoriteTrack401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if _, err := h.trackSvc.GetTrack(ctx, req.TrackId.String()); err != nil {
+		if errors.Is(err, track.ErrNotFound) {
+			return FavoriteTrack404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "track not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "favorite track timeout", "route", "POST /users/me/favorites/tracks/{trackId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	if err := h.userSvc.AddFavoriteTrack(ctx, claims.UserID, req.TrackId.String()); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "favorite track timeout", "route", "POST /users/me/favorites/tracks/{trackId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	return FavoriteTrack204Response{}, nil
 }
 
-func (h *Handlers) UnfavoriteTrack(_ context.Context, _ UnfavoriteTrackRequestObject) (UnfavoriteTrackResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) UnfavoriteTrack(ctx context.Context, req UnfavoriteTrackRequestObject) (UnfavoriteTrackResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "favorites") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "favorites are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return UnfavoriteTrack401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := h.userSvc.RemoveFavoriteTrack(ctx, claims.UserID, req.TrackId.String()); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "unfavorite track timeout", "route", "DELETE /users/me/favorites/tracks/{trackId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	return UnfavoriteTrack204Response{}, nil
 }
 
-func (h *Handlers) FavoriteStream(_ context.Context, _ FavoriteStreamRequestObject) (FavoriteStreamResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) FavoriteStream(ctx context.Context, req FavoriteStreamRequestObject) (FavoriteStreamResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "favorites") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "favorites are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return FavoriteStream401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if _, err := h.streamSvc.GetStream(ctx, req.StreamId.String()); err != nil {
+		if errors.Is(err, streaming.ErrNotFound) {
+			return FavoriteStream404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "stream not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "favorite stream timeout", "route", "POST /users/me/favorites/streams/{streamId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	if err := h.userSvc.AddFavoriteStream(ctx, claims.UserID, req.StreamId.String()); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "favorite stream timeout", "route", "POST /users/me/favorites/streams/{streamId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	return FavoriteStream204Response{}, nil
 }
 
-func (h *Handlers) UnfavoriteStream(_ context.Context, _ UnfavoriteStreamRequestObject) (UnfavoriteStreamResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) UnfavoriteStream(ctx context.Context, req UnfavoriteStreamRequestObject) (UnfavoriteStreamResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "favorites") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "favorites are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return UnfavoriteStream401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := h.userSvc.RemoveFavoriteStream(ctx, claims.UserID, req.StreamId.String()); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "unfavorite stream timeout", "route", "DELETE /users/me/favorites/streams/{streamId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	return UnfavoriteStream204Response{}, nil
 }
 
-func (h *Handlers) FavoritePlaylist(_ context.Context, _ FavoritePlaylistRequestObject) (FavoritePlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) FavoritePlaylist(ctx context.Context, req FavoritePlaylistRequestObject) (FavoritePlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "favorites") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "favorites are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return FavoritePlaylist401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if _, err := h.playlistSvc.Get(ctx, req.PlaylistId.String()); err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return FavoritePlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "favorite playlist timeout", "route", "POST /users/me/favorites/playlists/{playlistId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	if err := h.userSvc.AddFavoritePlaylist(ctx, claims.UserID, req.PlaylistId.String()); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "favorite playlist timeout", "route", "POST /users/me/favorites/playlists/{playlistId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	return FavoritePlaylist204Response{}, nil
 }
 
-func (h *Handlers) UnfavoritePlaylist(_ context.Context, _ UnfavoritePlaylistRequestObject) (UnfavoritePlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) UnfavoritePlaylist(ctx context.Context, req UnfavoritePlaylistRequestObject) (UnfavoritePlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "favorites") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "favorites are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return UnfavoritePlaylist401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := h.userSvc.RemoveFavoritePlaylist(ctx, claims.UserID, req.PlaylistId.String()); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "unfavorite playlist timeout", "route", "DELETE /users/me/favorites/playlists/{playlistId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	return UnfavoritePlaylist204Response{}, nil
+}
+
+func (h *Handlers) ListFavorites(ctx context.Context, _ ListFavoritesRequestObject) (ListFavoritesResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "favorites") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "favorites are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return ListFavorites401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	u, err := h.userSvc.GetByID(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "list favorites timeout", "route", "GET /users/me/favorites")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	tracks, err := h.hydrateTracks(ctx, pgUUIDsToStrings(u.FavoriteTrackIDs))
+	if err != nil {
+		return nil, err
+	}
+	streams, err := h.hydrateStreams(ctx, pgUUIDsToStrings(u.FavoriteStreamIDs))
+	if err != nil {
+		return nil, err
+	}
+	playlists, err := h.hydratePlaylists(ctx, pgUUIDsToStrings(u.FavoritePlaylistIDs))
+	if err != nil {
+		return nil, err
+	}
+
+	return ListFavorites200JSONResponse{Tracks: tracks, Streams: streams, Playlists: playlists}, nil
 }
 
 func (h *Handlers) ListTracks(ctx context.Context, req ListTracksRequestObject) (ListTracksResponseObject, error) {
@@ -666,32 +969,324 @@ func (h *Handlers) DeleteStream(ctx context.Context, req DeleteStreamRequestObje
 	return DeleteStream204Response{}, nil
 }
 
-func (h *Handlers) ListPlaylists(_ context.Context, _ ListPlaylistsRequestObject) (ListPlaylistsResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) ListPlaylists(ctx context.Context, _ ListPlaylistsRequestObject) (ListPlaylistsResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "playlists") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "playlists are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return ListPlaylists401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	playlists, err := h.playlistSvc.ListByOwner(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "list playlists timeout", "route", "GET /playlists")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	items := make([]Playlist, 0, len(playlists))
+	for i := range playlists {
+		item, err := playlistToAPI(&playlists[i])
+		if err != nil {
+			return nil, fmt.Errorf("marshal playlist: %w", err)
+		}
+		items = append(items, item)
+	}
+	return ListPlaylists200JSONResponse{Items: items}, nil
 }
 
-func (h *Handlers) CreatePlaylist(_ context.Context, _ CreatePlaylistRequestObject) (CreatePlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) CreatePlaylist(ctx context.Context, req CreatePlaylistRequestObject) (CreatePlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "playlists") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "playlists are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return CreatePlaylist401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	desc := ""
+	if req.Body.Description != nil {
+		desc = *req.Body.Description
+	}
+	isPublic := false
+	if req.Body.IsPublic != nil {
+		isPublic = *req.Body.IsPublic
+	}
+
+	p, err := h.playlistSvc.Create(ctx, claims.UserID, req.Body.Title, desc, isPublic)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "create playlist timeout", "route", "POST /playlists")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	apiPlaylist, err := playlistToAPI(p)
+	if err != nil {
+		return nil, fmt.Errorf("marshal playlist: %w", err)
+	}
+	return CreatePlaylist201JSONResponse(apiPlaylist), nil
 }
 
-func (h *Handlers) GetPlaylist(_ context.Context, _ GetPlaylistRequestObject) (GetPlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) GetPlaylist(ctx context.Context, req GetPlaylistRequestObject) (GetPlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "playlists") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "playlists are disabled"}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	p, err := h.playlistSvc.Get(ctx, req.Id.String())
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return GetPlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "get playlist timeout", "route", "GET /playlists/{id}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	// Private playlists are only visible to their owner (or an admin); anonymous
+	// or non-owner requests get 404 rather than 403 so existence isn't leaked.
+	if !p.IsPublic {
+		claims, ok := middleware.ClaimsFromContext(ctx)
+		if !ok || (p.OwnerID != claims.UserID && !claims.Role.AtLeast(auth.RoleAdmin)) {
+			return GetPlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+	}
+
+	apiPlaylist, err := playlistToAPI(p)
+	if err != nil {
+		return nil, fmt.Errorf("marshal playlist: %w", err)
+	}
+	tracks, err := h.hydrateTracks(ctx, p.TrackIDs)
+	if err != nil {
+		return nil, err
+	}
+	apiPlaylist.Tracks = &tracks
+	return GetPlaylist200JSONResponse(apiPlaylist), nil
 }
 
-func (h *Handlers) UpdatePlaylist(_ context.Context, _ UpdatePlaylistRequestObject) (UpdatePlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) UpdatePlaylist(ctx context.Context, req UpdatePlaylistRequestObject) (UpdatePlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "playlists") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "playlists are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return UpdatePlaylist401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	existing, err := h.playlistSvc.Get(ctx, req.Id.String())
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return UpdatePlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "update playlist timeout", "route", "PATCH /playlists/{id}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	if existing.OwnerID != claims.UserID && !claims.Role.AtLeast(auth.RoleAdmin) {
+		return UpdatePlaylist403JSONResponse{ForbiddenJSONResponse{Code: 403, Message: "forbidden"}}, nil
+	}
+
+	requesterID := claims.UserID
+	if claims.Role.AtLeast(auth.RoleAdmin) {
+		requesterID = ""
+	}
+
+	p, err := h.playlistSvc.Update(ctx, req.Id.String(), requesterID, req.Body.Title, req.Body.Description, req.Body.IsPublic)
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return UpdatePlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "update playlist timeout", "route", "PATCH /playlists/{id}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	apiPlaylist, err := playlistToAPI(p)
+	if err != nil {
+		return nil, fmt.Errorf("marshal playlist: %w", err)
+	}
+	return UpdatePlaylist200JSONResponse(apiPlaylist), nil
 }
 
-func (h *Handlers) DeletePlaylist(_ context.Context, _ DeletePlaylistRequestObject) (DeletePlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) DeletePlaylist(ctx context.Context, req DeletePlaylistRequestObject) (DeletePlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "playlists") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "playlists are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return DeletePlaylist401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	existing, err := h.playlistSvc.Get(ctx, req.Id.String())
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return DeletePlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "delete playlist timeout", "route", "DELETE /playlists/{id}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	if existing.OwnerID != claims.UserID && !claims.Role.AtLeast(auth.RoleAdmin) {
+		return DeletePlaylist403JSONResponse{ForbiddenJSONResponse{Code: 403, Message: "forbidden"}}, nil
+	}
+
+	requesterID := claims.UserID
+	if claims.Role.AtLeast(auth.RoleAdmin) {
+		requesterID = ""
+	}
+
+	if err := h.playlistSvc.Delete(ctx, req.Id.String(), requesterID); err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return DeletePlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "delete playlist timeout", "route", "DELETE /playlists/{id}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	return DeletePlaylist204Response{}, nil
 }
 
-func (h *Handlers) AddTrackToPlaylist(_ context.Context, _ AddTrackToPlaylistRequestObject) (AddTrackToPlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) AddTrackToPlaylist(ctx context.Context, req AddTrackToPlaylistRequestObject) (AddTrackToPlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "playlists") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "playlists are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return AddTrackToPlaylist401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	existing, err := h.playlistSvc.Get(ctx, req.Id.String())
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return AddTrackToPlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "add track to playlist timeout", "route", "POST /playlists/{id}/tracks")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	if existing.OwnerID != claims.UserID && !claims.Role.AtLeast(auth.RoleAdmin) {
+		return AddTrackToPlaylist403JSONResponse{ForbiddenJSONResponse{Code: 403, Message: "forbidden"}}, nil
+	}
+
+	if _, err := h.trackSvc.GetTrack(ctx, req.Body.TrackId.String()); err != nil {
+		if errors.Is(err, track.ErrNotFound) {
+			return AddTrackToPlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "track not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "add track to playlist timeout", "route", "POST /playlists/{id}/tracks")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	requesterID := claims.UserID
+	if claims.Role.AtLeast(auth.RoleAdmin) {
+		requesterID = ""
+	}
+
+	p, err := h.playlistSvc.AddTrack(ctx, req.Id.String(), requesterID, req.Body.TrackId.String())
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return AddTrackToPlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "add track to playlist timeout", "route", "POST /playlists/{id}/tracks")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	apiPlaylist, err := playlistToAPI(p)
+	if err != nil {
+		return nil, fmt.Errorf("marshal playlist: %w", err)
+	}
+	return AddTrackToPlaylist200JSONResponse(apiPlaylist), nil
 }
 
-func (h *Handlers) RemoveTrackFromPlaylist(_ context.Context, _ RemoveTrackFromPlaylistRequestObject) (RemoveTrackFromPlaylistResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) RemoveTrackFromPlaylist(ctx context.Context, req RemoveTrackFromPlaylistRequestObject) (RemoveTrackFromPlaylistResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "playlists") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "playlists are disabled"}
+	}
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return RemoveTrackFromPlaylist401JSONResponse{UnauthorizedJSONResponse{Code: 401, Message: "authentication required"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	existing, err := h.playlistSvc.Get(ctx, req.Id.String())
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return RemoveTrackFromPlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "remove track from playlist timeout", "route", "DELETE /playlists/{id}/tracks/{trackId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+	if existing.OwnerID != claims.UserID && !claims.Role.AtLeast(auth.RoleAdmin) {
+		return RemoveTrackFromPlaylist403JSONResponse{ForbiddenJSONResponse{Code: 403, Message: "forbidden"}}, nil
+	}
+
+	requesterID := claims.UserID
+	if claims.Role.AtLeast(auth.RoleAdmin) {
+		requesterID = ""
+	}
+
+	p, err := h.playlistSvc.RemoveTrack(ctx, req.Id.String(), requesterID, req.TrackId.String())
+	if err != nil {
+		if errors.Is(err, playlist.ErrNotFound) {
+			return RemoveTrackFromPlaylist404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "playlist not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "remove track from playlist timeout", "route", "DELETE /playlists/{id}/tracks/{trackId}")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	apiPlaylist, err := playlistToAPI(p)
+	if err != nil {
+		return nil, fmt.Errorf("marshal playlist: %w", err)
+	}
+	return RemoveTrackFromPlaylist200JSONResponse(apiPlaylist), nil
 }
 
 func (h *Handlers) ListFeatureFlags(_ context.Context, _ ListFeatureFlagsRequestObject) (ListFeatureFlagsResponseObject, error) {

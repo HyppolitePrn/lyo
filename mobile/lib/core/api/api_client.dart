@@ -67,6 +67,62 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> patch(
+    String path,
+    Map<String, dynamic> body, {
+    String? token,
+  }) async {
+    final uri = Uri.parse('$_baseUrl$path');
+    try {
+      final response = await http
+          .patch(
+            uri,
+            headers: _authHeaders(token),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 400) {
+        throw ApiException(
+            response.statusCode, _extractError(decoded, response.statusCode));
+      }
+      return decoded as Map<String, dynamic>;
+    } on ApiException {
+      rethrow;
+    } on SocketException {
+      throw const ApiException(
+          0, 'Cannot reach the server. Check your connection.');
+    } on HttpException {
+      throw const ApiException(0, 'Network error. Try again.');
+    }
+  }
+
+  // For endpoints that respond 204 No Content on success (e.g. favorite toggles):
+  // POST with no request or response body.
+  Future<void> postEmpty(String path, {String? token}) async {
+    final uri = Uri.parse('$_baseUrl$path');
+    try {
+      final response = await http
+          .post(uri, headers: _authHeaders(token))
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode >= 400) {
+        final decoded =
+            response.body.isNotEmpty ? jsonDecode(response.body) : null;
+        throw ApiException(
+            response.statusCode, _extractError(decoded, response.statusCode));
+      }
+    } on ApiException {
+      rethrow;
+    } on SocketException {
+      throw const ApiException(
+          0, 'Cannot reach the server. Check your connection.');
+    } on HttpException {
+      throw const ApiException(0, 'Network error. Try again.');
+    }
+  }
+
   Future<dynamic> get(String path, {String? token}) async {
     final uri = Uri.parse('$_baseUrl$path');
     try {

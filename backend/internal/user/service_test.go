@@ -21,6 +21,8 @@ type mockRepo struct {
 	getByIDFn        func(context.Context, string) (*user.User, error)
 	updateFn         func(context.Context, string, *string, *string) (*user.User, error)
 	updatePasswordFn func(context.Context, string, string) error
+	addFavoriteFn    func(column, userID, targetID string) error
+	removeFavoriteFn func(column, userID, targetID string) error
 }
 
 func (m *mockRepo) Create(ctx context.Context, username, email, passwordHash string, role auth.Role) (*user.User, error) {
@@ -40,6 +42,30 @@ func (m *mockRepo) UpdatePassword(ctx context.Context, id, passwordHash string) 
 		return nil
 	}
 	return m.updatePasswordFn(ctx, id, passwordHash)
+}
+func (m *mockRepo) call(fn func(column, userID, targetID string) error, column, userID, targetID string) error {
+	if fn == nil {
+		return nil
+	}
+	return fn(column, userID, targetID)
+}
+func (m *mockRepo) AddFavoriteTrack(_ context.Context, userID, trackID string) error {
+	return m.call(m.addFavoriteFn, "track", userID, trackID)
+}
+func (m *mockRepo) RemoveFavoriteTrack(_ context.Context, userID, trackID string) error {
+	return m.call(m.removeFavoriteFn, "track", userID, trackID)
+}
+func (m *mockRepo) AddFavoriteStream(_ context.Context, userID, streamID string) error {
+	return m.call(m.addFavoriteFn, "stream", userID, streamID)
+}
+func (m *mockRepo) RemoveFavoriteStream(_ context.Context, userID, streamID string) error {
+	return m.call(m.removeFavoriteFn, "stream", userID, streamID)
+}
+func (m *mockRepo) AddFavoritePlaylist(_ context.Context, userID, playlistID string) error {
+	return m.call(m.addFavoriteFn, "playlist", userID, playlistID)
+}
+func (m *mockRepo) RemoveFavoritePlaylist(_ context.Context, userID, playlistID string) error {
+	return m.call(m.removeFavoriteFn, "playlist", userID, playlistID)
 }
 
 func newTestAuthSvc() *auth.Service {
@@ -128,5 +154,50 @@ func TestLogin_UnknownEmail(t *testing.T) {
 	_, err := svc.Login(context.Background(), "nobody@example.com", "secret")
 	if !errors.Is(err, user.ErrInvalidCredentials) {
 		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
+func TestAddFavoriteTrack_DelegatesToRepo(t *testing.T) {
+	var gotColumn, gotUser, gotTarget string
+	svc := user.NewService(&mockRepo{
+		addFavoriteFn: func(column, userID, targetID string) error {
+			gotColumn, gotUser, gotTarget = column, userID, targetID
+			return nil
+		},
+	}, newTestAuthSvc())
+
+	if err := svc.AddFavoriteTrack(context.Background(), "u1", "t1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotColumn != "track" || gotUser != "u1" || gotTarget != "t1" {
+		t.Fatalf("unexpected repo call: column=%s user=%s target=%s", gotColumn, gotUser, gotTarget)
+	}
+}
+
+func TestRemoveFavoriteStream_PropagatesRepoError(t *testing.T) {
+	svc := user.NewService(&mockRepo{
+		removeFavoriteFn: func(string, string, string) error { return user.ErrNotFound },
+	}, newTestAuthSvc())
+
+	err := svc.RemoveFavoriteStream(context.Background(), "u1", "s1")
+	if !errors.Is(err, user.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestAddFavoritePlaylist_DelegatesToRepo(t *testing.T) {
+	var gotColumn string
+	svc := user.NewService(&mockRepo{
+		addFavoriteFn: func(column, _, _ string) error {
+			gotColumn = column
+			return nil
+		},
+	}, newTestAuthSvc())
+
+	if err := svc.AddFavoritePlaylist(context.Background(), "u1", "p1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotColumn != "playlist" {
+		t.Fatalf("expected playlist column, got %s", gotColumn)
 	}
 }

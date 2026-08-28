@@ -6,11 +6,14 @@ import '../../features/auth/screens/register_screen.dart';
 import '../../features/auth/screens/reset_password_screen.dart';
 import '../../features/auth/screens/splash_screen.dart';
 import '../../features/broadcaster/screens/broadcaster_screen.dart';
+import '../../features/favorites/screens/favorites_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/player/screens/live_player_screen.dart';
 import '../../features/player/screens/player_screen.dart';
 import '../../features/player/screens/recorded_player_screen.dart';
 import '../../features/player/screens/stream_list_screen.dart';
+import '../../features/playlist/screens/playlist_detail_screen.dart';
+import '../../features/playlist/screens/playlists_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/track/screens/upload_track_screen.dart';
 
@@ -76,6 +79,19 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/upload-track',
       builder: (context, state) => const UploadTrackScreen(),
+    ),
+    GoRoute(
+      path: '/playlists',
+      builder: (context, state) => const PlaylistsScreen(),
+    ),
+    GoRoute(
+      path: '/playlists/:id',
+      builder: (context, state) =>
+          PlaylistDetailScreen(playlistId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/favorites',
+      builder: (context, state) => const FavoritesScreen(),
     ),
   ],
 );
