@@ -27,7 +27,22 @@ class RecordedPlayerNotifier extends ChangeNotifier {
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration?>? _durSub;
 
+  // Called when navigating to the player screen. Keeps the current track
+  // playing (instead of restarting it) if it's already loaded — this is what
+  // lets playback survive leaving and re-entering the screen.
+  Future<void> loadIfNeeded(String trackId, String? token) async {
+    if (track?.id == trackId) {
+      return;
+    }
+    await load(trackId, token);
+  }
+
   Future<void> load(String trackId, String? token) async {
+    await _stateSub?.cancel();
+    await _posSub?.cancel();
+    await _durSub?.cancel();
+
+    track = null;
     isLoading = true;
     error = null;
     notifyListeners();
@@ -71,6 +86,20 @@ class RecordedPlayerNotifier extends ChangeNotifier {
   }
 
   void seek(Duration to) => _player.seek(to);
+
+  // Stops playback and clears the track — used when the mini player is
+  // dismissed. Unlike dispose(), this notifier stays alive for the next track.
+  Future<void> close() async {
+    await _stateSub?.cancel();
+    await _posSub?.cancel();
+    await _durSub?.cancel();
+    await _player.stop();
+    track = null;
+    isPlaying = false;
+    position = Duration.zero;
+    duration = Duration.zero;
+    notifyListeners();
+  }
 
   @override
   void dispose() {

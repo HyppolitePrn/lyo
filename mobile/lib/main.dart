@@ -10,6 +10,7 @@ import 'features/broadcaster/providers/broadcaster_notifier.dart';
 import 'features/favorites/providers/favorites_notifier.dart';
 import 'features/home/providers/home_notifier.dart';
 import 'features/player/providers/player_notifier.dart';
+import 'features/player/providers/recorded_player_notifier.dart';
 import 'features/playlist/providers/playlist_notifier.dart';
 import 'features/track/providers/upload_track_notifier.dart';
 
@@ -21,6 +22,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => AuthNotifier()),
         ChangeNotifierProvider(create: (_) => HomeNotifier()),
         ChangeNotifierProvider(create: (_) => PlayerNotifier()),
+        ChangeNotifierProvider(create: (_) => RecordedPlayerNotifier()),
         ChangeNotifierProvider(create: (_) => BroadcasterNotifier()),
         ChangeNotifierProvider(create: (_) => UploadTrackNotifier()),
         ChangeNotifierProvider(create: (_) => PlaylistNotifier()),
