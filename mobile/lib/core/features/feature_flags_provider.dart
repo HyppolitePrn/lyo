@@ -11,5 +11,7 @@ class FeatureFlags {
     'offline_mode': false,
     'transcoding': false,
     'social_auth': false,
+    'playlists': true,
+    'favorites': true,
   };
 }

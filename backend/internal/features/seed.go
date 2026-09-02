@@ -9,4 +9,6 @@ var Seeds = []Flag{
 	{Name: "recommendations", Enabled: false, Description: "Listen-history-based track recommendations"},
 	{Name: "offline_mode", Enabled: false, Description: "Playlist caching for offline playback"},
 	{Name: "transcoding", Enabled: false, Description: "Adaptive bitrate transcoding based on client bandwidth"},
+	{Name: "playlists", Enabled: true, Description: "Playlist creation and management"},
+	{Name: "favorites", Enabled: true, Description: "Favoriting tracks, streams, and playlists"},
 }

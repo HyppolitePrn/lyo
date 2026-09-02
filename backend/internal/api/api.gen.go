@@ -85,6 +85,7 @@ type AddTrackToPlaylistRequest struct {
 // CreatePlaylistRequest defines model for CreatePlaylistRequest.
 type CreatePlaylistRequest struct {
 	Description *string `json:"description,omitempty"`
+	IsPublic    *bool   `json:"is_public,omitempty"`
 	Title       string  `json:"title"`
 }
 
@@ -106,6 +107,13 @@ type CreateTrackRequest struct {
 type Error struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// FavoritesList defines model for FavoritesList.
+type FavoritesList struct {
+	Playlists []Playlist `json:"playlists"`
+	Streams   []Stream   `json:"streams"`
+	Tracks    []Track    `json:"tracks"`
 }
 
 // FeatureFlag defines model for FeatureFlag.
@@ -151,9 +159,11 @@ type Playlist struct {
 	CreatedAt   time.Time            `json:"created_at"`
 	Description *string              `json:"description,omitempty"`
 	Id          openapi_types.UUID   `json:"id"`
+	IsPublic    bool                 `json:"is_public"`
 	OwnerId     openapi_types.UUID   `json:"owner_id"`
 	Title       string               `json:"title"`
 	TrackIds    []openapi_types.UUID `json:"track_ids"`
+	Tracks      *[]Track             `json:"tracks,omitempty"`
 	UpdatedAt   time.Time            `json:"updated_at"`
 }
 
@@ -249,6 +259,7 @@ type TrackList struct {
 // UpdatePlaylistRequest defines model for UpdatePlaylistRequest.
 type UpdatePlaylistRequest struct {
 	Description *string `json:"description,omitempty"`
+	IsPublic    *bool   `json:"is_public,omitempty"`
 	Title       *string `json:"title,omitempty"`
 }
 
@@ -417,6 +428,9 @@ type ServerInterface interface {
 	// Update the authenticated user's profile
 	// (PATCH /users/me)
 	UpdateUserByID(w http.ResponseWriter, r *http.Request)
+	// List the authenticated user's favorite tracks, streams, and playlists
+	// (GET /users/me/favorites)
+	ListFavorites(w http.ResponseWriter, r *http.Request)
 	// Remove a playlist from favorites
 	// (DELETE /users/me/favorites/playlists/{playlistId})
 	UnfavoritePlaylist(w http.ResponseWriter, r *http.Request, playlistId openapi_types.UUID)
@@ -594,6 +608,12 @@ func (_ Unimplemented) GetUserByID(w http.ResponseWriter, r *http.Request) {
 // Update the authenticated user's profile
 // (PATCH /users/me)
 func (_ Unimplemented) UpdateUserByID(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List the authenticated user's favorite tracks, streams, and playlists
+// (GET /users/me/favorites)
+func (_ Unimplemented) ListFavorites(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1263,6 +1283,26 @@ func (siw *ServerInterfaceWrapper) UpdateUserByID(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListFavorites operation middleware
+func (siw *ServerInterfaceWrapper) ListFavorites(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFavorites(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // UnfavoritePlaylist operation middleware
 func (siw *ServerInterfaceWrapper) UnfavoritePlaylist(w http.ResponseWriter, r *http.Request) {
 
@@ -1639,6 +1679,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/users/me", wrapper.UpdateUserByID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/users/me/favorites", wrapper.ListFavorites)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/users/me/favorites/playlists/{playlistId}", wrapper.UnfavoritePlaylist)
@@ -2493,6 +2536,31 @@ func (response UpdateUserByID422JSONResponse) VisitUpdateUserByIDResponse(w http
 	return json.NewEncoder(w).Encode(response)
 }
 
+type ListFavoritesRequestObject struct {
+}
+
+type ListFavoritesResponseObject interface {
+	VisitListFavoritesResponse(w http.ResponseWriter) error
+}
+
+type ListFavorites200JSONResponse FavoritesList
+
+func (response ListFavorites200JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListFavorites401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListFavorites401JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type UnfavoritePlaylistRequestObject struct {
 	PlaylistId openapi_types.UUID `json:"playlistId"`
 }
@@ -2750,6 +2818,9 @@ type StrictServerInterface interface {
 	// Update the authenticated user's profile
 	// (PATCH /users/me)
 	UpdateUserByID(ctx context.Context, request UpdateUserByIDRequestObject) (UpdateUserByIDResponseObject, error)
+	// List the authenticated user's favorite tracks, streams, and playlists
+	// (GET /users/me/favorites)
+	ListFavorites(ctx context.Context, request ListFavoritesRequestObject) (ListFavoritesResponseObject, error)
 	// Remove a playlist from favorites
 	// (DELETE /users/me/favorites/playlists/{playlistId})
 	UnfavoritePlaylist(ctx context.Context, request UnfavoritePlaylistRequestObject) (UnfavoritePlaylistResponseObject, error)
@@ -3532,6 +3603,30 @@ func (sh *strictHandler) UpdateUserByID(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateUserByIDResponseObject); ok {
 		if err := validResponse.VisitUpdateUserByIDResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFavorites operation middleware
+func (sh *strictHandler) ListFavorites(w http.ResponseWriter, r *http.Request) {
+	var request ListFavoritesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFavorites(ctx, request.(ListFavoritesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFavorites")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFavoritesResponseObject); ok {
+		if err := validResponse.VisitListFavoritesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

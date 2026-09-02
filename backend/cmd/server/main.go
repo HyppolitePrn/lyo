@@ -26,6 +26,7 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/observability"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
+	"github.com/hyppoliteprn/lyo/internal/playlist"
 	"github.com/hyppoliteprn/lyo/internal/storage"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/track"
@@ -121,6 +122,8 @@ func main() {
 	}
 	trackRepo := track.NewRepository(pool)
 	trackSvc := track.NewService(trackRepo, s3Storage)
+	playlistRepo := playlist.NewRepository(pool)
+	playlistSvc := playlist.NewService(playlistRepo)
 
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
@@ -137,7 +140,7 @@ func main() {
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, getUserByIDUC, updateUserByIDUC, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, playlistSvc, getUserByIDUC, updateUserByIDUC, logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,

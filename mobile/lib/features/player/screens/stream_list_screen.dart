@@ -3,8 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/features/feature_flags_provider.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../favorites/providers/favorites_notifier.dart';
+import '../../favorites/widgets/favorite_button.dart';
 import '../models/stream_model.dart';
 import '../services/player_service.dart';
 
@@ -157,6 +160,9 @@ class _StreamTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final favoritesEnabled = context.watch<FeatureFlags>().isEnabled('favorites');
+    final favorites = favoritesEnabled ? context.watch<FavoritesNotifier>() : null;
+
     return GestureDetector(
       onTap: () => context.push('/player/${stream.id}'),
       child: Container(
@@ -200,6 +206,16 @@ class _StreamTile extends StatelessWidget {
                 ],
               ),
             ),
+            if (favorites != null)
+              FavoriteButton(
+                isFavorited: favorites.isStreamFavorited(stream.id),
+                onTap: () {
+                  final token = context.read<AuthNotifier>().accessToken;
+                  if (token != null) {
+                    favorites.toggleStream(stream.id, token);
+                  }
+                },
+              ),
             Icon(Icons.chevron_right, color: textSub),
           ],
         ),

@@ -3,8 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/features/feature_flags_provider.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../favorites/providers/favorites_notifier.dart';
+import '../../favorites/widgets/favorite_button.dart';
+import '../../playlist/widgets/add_to_playlist_sheet.dart';
 import '../../track/models/track_model.dart';
 import '../../track/services/track_service.dart';
 import '../../track/utils/track_colors.dart';
@@ -194,6 +198,10 @@ class _TrackTile extends StatelessWidget {
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
     final textSub = dark ? lyoSubDark : lyoSubLight;
     final colors = trackColors(track.id);
+    final flags = context.watch<FeatureFlags>();
+    final favoritesEnabled = flags.isEnabled('favorites');
+    final favorites = favoritesEnabled ? context.watch<FavoritesNotifier>() : null;
+    final playlistsEnabled = flags.isEnabled('playlists');
 
     return GestureDetector(
       onTap: onTap,
@@ -228,6 +236,22 @@ class _TrackTile extends StatelessWidget {
                 ],
               ),
             ),
+            if (playlistsEnabled)
+              IconButton(
+                icon: const Icon(Icons.playlist_add, size: 22, color: lyoSubDark),
+                onPressed: () => showAddToPlaylistSheet(context, track.id),
+              ),
+            if (favorites != null)
+              FavoriteButton(
+                isFavorited: favorites.isTrackFavorited(track.id),
+                onTap: () {
+                  final token = context.read<AuthNotifier>().accessToken;
+                  if (token != null) {
+                    favorites.toggleTrack(track.id, token);
+                  }
+                },
+              ),
+            const SizedBox(width: 4),
             const Icon(Icons.play_circle_outline, size: 22, color: lyoAccent),
           ],
         ),

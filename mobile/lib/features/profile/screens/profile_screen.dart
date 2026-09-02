@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/features/feature_flags_provider.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
 
@@ -91,6 +92,7 @@ class _ProfileBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final textSub = dark ? lyoSubDark : lyoSubLight;
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
+    final flags = context.watch<FeatureFlags>();
 
     return SafeArea(
       child: ListView(
@@ -141,6 +143,24 @@ class _ProfileBody extends StatelessWidget {
             value: auth.role ?? '—',
             dark: dark,
           ),
+          if (flags.isEnabled('playlists')) ...[
+            const SizedBox(height: lyoGapM),
+            _NavTile(
+              icon: Icons.queue_music_outlined,
+              label: 'My Playlists',
+              dark: dark,
+              onTap: () => context.push('/playlists'),
+            ),
+          ],
+          if (flags.isEnabled('favorites')) ...[
+            const SizedBox(height: lyoGapM),
+            _NavTile(
+              icon: Icons.favorite_border,
+              label: 'Favorites',
+              dark: dark,
+              onTap: () => context.push('/favorites'),
+            ),
+          ],
           const SizedBox(height: lyoGapXXL),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
@@ -153,6 +173,51 @@ class _ProfileBody extends StatelessWidget {
             label: const Text('Se déconnecter'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
+  const _NavTile({
+    required this.icon,
+    required this.label,
+    required this.dark,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool dark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = dark ? lyoSurfaceDark : lyoSurfaceLight;
+    final textPrimary = dark ? lyoTextDark : lyoTextLight;
+    final textSub = dark ? lyoSubDark : lyoSubLight;
+    final border = dark ? lyoBorderDark : lyoBorderLight;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(lyoGapL),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(lyoRadiusCard),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: lyoAccent),
+            const SizedBox(width: lyoGapM),
+            Text(label,
+                style: TextStyle(
+                    color: textPrimary, fontWeight: FontWeight.w600, fontSize: lyoBody2)),
+            const Spacer(),
+            Icon(Icons.chevron_right, color: textSub),
+          ],
+        ),
       ),
     );
   }

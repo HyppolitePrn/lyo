@@ -20,6 +20,7 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
+	"github.com/hyppoliteprn/lyo/internal/playlist"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/track"
 	"github.com/hyppoliteprn/lyo/internal/user"
@@ -37,6 +38,19 @@ func (m *mockUserService) Register(ctx context.Context, username, email, passwor
 }
 func (m *mockUserService) Login(ctx context.Context, email, password string) (auth.TokenPair, error) {
 	return m.loginFn(ctx, email, password)
+}
+func (m *mockUserService) GetByID(_ context.Context, _ string) (*user.User, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockUserService) AddFavoriteTrack(_ context.Context, _, _ string) error    { return nil }
+func (m *mockUserService) RemoveFavoriteTrack(_ context.Context, _, _ string) error { return nil }
+func (m *mockUserService) AddFavoriteStream(_ context.Context, _, _ string) error   { return nil }
+func (m *mockUserService) RemoveFavoriteStream(_ context.Context, _, _ string) error {
+	return nil
+}
+func (m *mockUserService) AddFavoritePlaylist(_ context.Context, _, _ string) error { return nil }
+func (m *mockUserService) RemoveFavoritePlaylist(_ context.Context, _, _ string) error {
+	return nil
 }
 
 type mockGetUserByIDUsecase struct {
@@ -112,6 +126,31 @@ func (nopTrackSvc) PresignUpload(_ context.Context, _, _ string) (string, string
 	return "", "", "", errors.New("not implemented")
 }
 
+// nopPlaylistSvc satisfies api.PlaylistService for tests that don't exercise playlists.
+type nopPlaylistSvc struct{}
+
+func (nopPlaylistSvc) ListByOwner(_ context.Context, _ string) ([]playlist.Playlist, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopPlaylistSvc) Create(_ context.Context, _, _, _ string, _ bool) (*playlist.Playlist, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopPlaylistSvc) Get(_ context.Context, _ string) (*playlist.Playlist, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopPlaylistSvc) Update(_ context.Context, _, _ string, _, _ *string, _ *bool) (*playlist.Playlist, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopPlaylistSvc) Delete(_ context.Context, _, _ string) error {
+	return errors.New("not implemented")
+}
+func (nopPlaylistSvc) AddTrack(_ context.Context, _, _, _ string) (*playlist.Playlist, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopPlaylistSvc) RemoveTrack(_ context.Context, _, _, _ string) (*playlist.Playlist, error) {
+	return nil, errors.New("not implemented")
+}
+
 func newTestRouter(
 	userSvc api.UserService,
 	authSvc *auth.Service,
@@ -122,7 +161,7 @@ func newTestRouter(
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(authSvc))
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, nopTrackSvc{}, getUserByIDUC, updateUserByIDUC, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, nopTrackSvc{}, nopPlaylistSvc{}, getUserByIDUC, updateUserByIDUC, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
