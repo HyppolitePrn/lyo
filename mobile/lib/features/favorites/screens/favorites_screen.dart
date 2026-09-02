@@ -117,6 +117,7 @@ class _TrackList extends StatelessWidget {
         final colors = trackColors(t.id);
         return GestureDetector(
           onTap: () => context.push('/recorded-player/${t.id}'),
+          behavior: HitTestBehavior.opaque,
           child: Row(
             children: [
               LyoArtworkTile(size: 48, radius: 10, color1: colors[0], color2: colors[1]),
@@ -155,6 +156,7 @@ class _StreamList extends StatelessWidget {
         final s = streams[i];
         return GestureDetector(
           onTap: () => context.push('/player/${s.id}'),
+          behavior: HitTestBehavior.opaque,
           child: Row(
             children: [
               const Icon(Icons.podcasts, color: lyoAccent),
@@ -195,6 +197,7 @@ class _PlaylistList extends StatelessWidget {
         final p = playlists[i];
         return GestureDetector(
           onTap: () => context.push('/playlists/${p.id}'),
+          behavior: HitTestBehavior.opaque,
           child: Row(
             children: [
               const Icon(Icons.queue_music, color: lyoAccent),

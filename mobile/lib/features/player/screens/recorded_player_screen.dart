@@ -12,20 +12,28 @@ String _fmtClock(Duration d) {
   return '$m:$s';
 }
 
-class RecordedPlayerScreen extends StatelessWidget {
+class RecordedPlayerScreen extends StatefulWidget {
   const RecordedPlayerScreen({required this.episodeId, super.key});
 
   // episodeId is a track ID.
   final String episodeId;
 
   @override
-  Widget build(BuildContext context) {
+  State<RecordedPlayerScreen> createState() => _RecordedPlayerScreenState();
+}
+
+class _RecordedPlayerScreenState extends State<RecordedPlayerScreen> {
+  @override
+  void initState() {
+    super.initState();
     final token = context.read<AuthNotifier>().accessToken;
-    return ChangeNotifierProvider(
-      create: (_) => RecordedPlayerNotifier()..load(episodeId, token),
-      child: const _RecordedPlayerView(),
-    );
+    // Uses the app-wide notifier so playback survives leaving this screen —
+    // loadIfNeeded() no-ops if this track is already loaded/playing.
+    context.read<RecordedPlayerNotifier>().loadIfNeeded(widget.episodeId, token);
   }
+
+  @override
+  Widget build(BuildContext context) => const _RecordedPlayerView();
 }
 
 class _RecordedPlayerView extends StatelessWidget {

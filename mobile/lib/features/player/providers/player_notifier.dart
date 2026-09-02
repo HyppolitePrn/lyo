@@ -91,7 +91,14 @@ class PlayerNotifier extends ChangeNotifier {
       stream = liveStream;
       notifyListeners();
 
-      _player = AudioPlayer();
+      // Audio offload crashes ExoPlayer on some devices for this stream
+      // format — IllegalArgumentException in DefaultAudioSink — so it's
+      // disabled explicitly rather than left to the platform default.
+      _player = AudioPlayer(
+        androidAudioOffloadPreferences: const AndroidAudioOffloadPreferences(
+          audioOffloadMode: AndroidAudioOffloadMode.disabled,
+        ),
+      );
       // Fire-and-forget: audio setup runs in the background without blocking state.
       _player!
           .setAudioSource(_WsAudioSource(_byteController!.stream))

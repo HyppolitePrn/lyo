@@ -6,7 +6,9 @@ import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
 import '../../player/models/stream_model.dart';
 import '../../player/providers/player_notifier.dart';
+import '../../player/providers/recorded_player_notifier.dart';
 import '../../profile/screens/profile_screen.dart';
+import '../../track/utils/track_colors.dart';
 import '../models/home_models.dart';
 import '../providers/home_notifier.dart';
 import '../widgets/live_eq_widget.dart';
@@ -110,35 +112,67 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final home = context.watch<HomeNotifier>();
     final auth = context.watch<AuthNotifier>();
+    final recorded = context.watch<RecordedPlayerNotifier>();
 
     final dark = Theme.of(context).brightness == Brightness.dark;
     final bg = dark ? lyoBgDark : lyoBgLight;
     final navBg = dark ? lyoNavDark : lyoNavLight;
     final border = dark ? lyoBorderDark : lyoBorderLight;
 
+    // A real, currently-loaded track takes priority over the demo live-player
+    // mini state — it reflects actual persisted playback.
+    final recordedTrack = recorded.track;
+    final showRecordedMini = recordedTrack != null;
+
     return Scaffold(
       backgroundColor: bg,
       body: Stack(
         children: [
           _buildTabBody(context, home, dark),
-          if (home.miniPlayer.isVisible)
+          if (showRecordedMini || home.miniPlayer.isVisible)
             Positioned(
               bottom: 8,
               left: 12,
               right: 12,
               child: MiniPlayer(
-                state: home.miniPlayer,
+                state: showRecordedMini
+                    ? MiniPlayerState(
+                        isVisible: true,
+                        isPlaying: recorded.isPlaying,
+                        trackTitle: recordedTrack.title,
+                        showName: recordedTrack.artist?.isNotEmpty == true
+                            ? recordedTrack.artist!
+                            : 'Unknown artist',
+                        artColor1: trackColors(recordedTrack.id)[0],
+                        artColor2: trackColors(recordedTrack.id)[1],
+                        type: PlayerType.recorded,
+                        position: recorded.position,
+                        duration: recorded.duration,
+                      )
+                    : home.miniPlayer,
                 onTap: () {
-                  if (home.miniPlayer.type == PlayerType.live) {
+                  if (showRecordedMini) {
+                    context.push('/recorded-player/${recordedTrack.id}');
+                  } else if (home.miniPlayer.type == PlayerType.live) {
                     context.push('/live-player/current');
                   } else {
                     context.push('/recorded-player/current');
                   }
                 },
-                onToggle: home.togglePlayPause,
+                onToggle: () {
+                  if (showRecordedMini) {
+                    recorded.togglePlayPause();
+                  } else {
+                    home.togglePlayPause();
+                  }
+                },
                 onDismiss: () {
-                  context.read<PlayerNotifier>().disconnect();
-                  home.dismissMiniPlayer();
+                  if (showRecordedMini) {
+                    recorded.close();
+                  } else {
+                    context.read<PlayerNotifier>().disconnect();
+                    home.dismissMiniPlayer();
+                  }
                 },
               ),
             ),
@@ -649,6 +683,7 @@ class _EpisodeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
