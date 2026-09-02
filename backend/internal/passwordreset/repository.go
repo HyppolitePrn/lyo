@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ErrNotFound is returned when a token lookup yields no rows.
@@ -22,11 +22,11 @@ type Repository interface {
 }
 
 type pgRepo struct {
-	pool *pgxpool.Pool
+	pool PgxPool
 }
 
 // NewRepository returns a PostgreSQL-backed Repository.
-func NewRepository(pool *pgxpool.Pool) Repository {
+func NewRepository(pool PgxPool) Repository {
 	return &pgRepo{pool: pool}
 }
 
@@ -69,4 +69,13 @@ func (r *pgRepo) MarkUsed(ctx context.Context, id string) error {
 
 	_, err := r.pool.Exec(ctx, q, id)
 	return err
+}
+
+// PgxPool is the subset of *pgxpool.Pool the repository needs. Declaring it
+// consumer-side keeps the concrete pool out of the package and lets tests
+// substitute an in-memory double.
+type PgxPool interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }

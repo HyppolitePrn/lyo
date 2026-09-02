@@ -7,7 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ErrNotFound is returned when a stream lookup yields no rows.
@@ -40,11 +39,11 @@ type StreamRepository interface {
 }
 
 type pgStreamRepo struct {
-	pool *pgxpool.Pool
+	pool PgxPool
 }
 
 // NewRepository returns a PostgreSQL-backed StreamRepository.
-func NewRepository(pool *pgxpool.Pool) StreamRepository {
+func NewRepository(pool PgxPool) StreamRepository {
 	return &pgStreamRepo{pool: pool}
 }
 
@@ -159,4 +158,13 @@ func scanStream(row scanner) (*Stream, error) {
 	}
 	s.Status = status
 	return &s, nil
+}
+
+// PgxPool is the subset of *pgxpool.Pool the repository needs. Declaring it
+// consumer-side keeps the concrete pool out of the package and lets tests
+// substitute an in-memory double.
+type PgxPool interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }

@@ -201,3 +201,142 @@ func TestAddFavoritePlaylist_DelegatesToRepo(t *testing.T) {
 		t.Fatalf("expected playlist column, got %s", gotColumn)
 	}
 }
+
+func TestGetByID_DelegatesToRepo(t *testing.T) {
+	u := fakeUser("secret")
+	svc := user.NewService(&mockRepo{
+		getByIDFn: func(_ context.Context, id string) (*user.User, error) {
+			if id != "00000000-0000-0000-0000-000000000001" {
+				t.Fatalf("repo called with %q", id)
+			}
+			return u, nil
+		},
+	}, newTestAuthSvc())
+
+	got, err := svc.GetByID(context.Background(), "00000000-0000-0000-0000-000000000001")
+	if err != nil {
+		t.Fatalf("get by id: %v", err)
+	}
+	if got.Username != "alice" {
+		t.Fatalf("username = %q", got.Username)
+	}
+}
+
+func TestGetByID_PropagatesNotFound(t *testing.T) {
+	svc := user.NewService(&mockRepo{
+		getByIDFn: func(context.Context, string) (*user.User, error) { return nil, user.ErrNotFound },
+	}, newTestAuthSvc())
+
+	if _, err := svc.GetByID(context.Background(), "nope"); !errors.Is(err, user.ErrNotFound) {
+		t.Fatalf("err = %v, want %v", err, user.ErrNotFound)
+	}
+}
+
+// Each favorite method must reach its own repository call, so a "favorite a
+// track" can never touch the streams or playlists array.
+func TestFavorites_TargetTheRightKind(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+		call func(*user.Service) error
+	}{
+		{"add track", "track", func(s *user.Service) error {
+			return s.AddFavoriteTrack(context.Background(), "u-1", "t-1")
+		}},
+		{"remove track", "track", func(s *user.Service) error {
+			return s.RemoveFavoriteTrack(context.Background(), "u-1", "t-1")
+		}},
+		{"add stream", "stream", func(s *user.Service) error {
+			return s.AddFavoriteStream(context.Background(), "u-1", "s-1")
+		}},
+		{"remove stream", "stream", func(s *user.Service) error {
+			return s.RemoveFavoriteStream(context.Background(), "u-1", "s-1")
+		}},
+		{"add playlist", "playlist", func(s *user.Service) error {
+			return s.AddFavoritePlaylist(context.Background(), "u-1", "pl-1")
+		}},
+		{"remove playlist", "playlist", func(s *user.Service) error {
+			return s.RemoveFavoritePlaylist(context.Background(), "u-1", "pl-1")
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotKind, gotUser string
+			record := func(kind, userID, _ string) error {
+				gotKind, gotUser = kind, userID
+				return nil
+			}
+			svc := user.NewService(&mockRepo{addFavoriteFn: record, removeFavoriteFn: record}, newTestAuthSvc())
+
+			if err := tt.call(svc); err != nil {
+				t.Fatalf("call: %v", err)
+			}
+			if gotKind != tt.kind {
+				t.Errorf("kind = %q, want %q", gotKind, tt.kind)
+			}
+			if gotUser != "u-1" {
+				t.Errorf("user = %q, want u-1", gotUser)
+			}
+		})
+	}
+}
+
+func TestFavorites_PropagateRepoError(t *testing.T) {
+	sentinel := errors.New("db down")
+	fail := func(string, string, string) error { return sentinel }
+	svc := user.NewService(&mockRepo{addFavoriteFn: fail, removeFavoriteFn: fail}, newTestAuthSvc())
+
+	calls := []func() error{
+		func() error { return svc.AddFavoriteTrack(context.Background(), "u-1", "t-1") },
+		func() error { return svc.RemoveFavoriteTrack(context.Background(), "u-1", "t-1") },
+		func() error { return svc.AddFavoriteStream(context.Background(), "u-1", "s-1") },
+		func() error { return svc.RemoveFavoriteStream(context.Background(), "u-1", "s-1") },
+		func() error { return svc.AddFavoritePlaylist(context.Background(), "u-1", "pl-1") },
+		func() error { return svc.RemoveFavoritePlaylist(context.Background(), "u-1", "pl-1") },
+	}
+	for i, call := range calls {
+		if err := call(); !errors.Is(err, sentinel) {
+			t.Errorf("call %d: err = %v, want %v", i, err, sentinel)
+		}
+	}
+}
+
+// An invalid UUID from the database can't be turned into a JWT subject.
+func TestRegister_InvalidUserIDIsAnError(t *testing.T) {
+	svc := user.NewService(&mockRepo{
+		createFn: func(context.Context, string, string, string, auth.Role) (*user.User, error) {
+			return &user.User{Role: auth.RoleUser}, nil // zero (invalid) pgtype.UUID
+		},
+	}, newTestAuthSvc())
+
+	if _, err := svc.Register(context.Background(), "alice", "alice@example.com", "secret"); err == nil {
+		t.Fatal("expected an error for a user with no valid ID")
+	}
+}
+
+func TestLogin_InvalidUserIDIsAnError(t *testing.T) {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.MinCost)
+	svc := user.NewService(&mockRepo{
+		getByEmailFn: func(context.Context, string) (*user.User, error) {
+			return &user.User{PasswordHash: string(hash), Role: auth.RoleUser}, nil
+		},
+	}, newTestAuthSvc())
+
+	if _, err := svc.Login(context.Background(), "alice@example.com", "secret"); err == nil {
+		t.Fatal("expected an error for a user with no valid ID")
+	}
+}
+
+// A repository failure other than "not found" must not be flattened into
+// ErrInvalidCredentials — that would hide an outage as a login failure.
+func TestLogin_PropagatesRepoError(t *testing.T) {
+	sentinel := errors.New("db down")
+	svc := user.NewService(&mockRepo{
+		getByEmailFn: func(context.Context, string) (*user.User, error) { return nil, sentinel },
+	}, newTestAuthSvc())
+
+	if _, err := svc.Login(context.Background(), "alice@example.com", "secret"); !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want %v", err, sentinel)
+	}
+}

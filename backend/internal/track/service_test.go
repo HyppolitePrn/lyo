@@ -197,3 +197,30 @@ func TestPresignUpload_KeyIsScopedToBroadcasterAndKeepsExtension(t *testing.T) {
 		t.Fatalf("unexpected audio URL: %q", audioURL)
 	}
 }
+
+// A filename with no extension yields a key with no trailing dot.
+func TestPresignUpload_FilenameWithoutExtension(t *testing.T) {
+	st := &mockStorage{presignFn: func(context.Context, string) (string, error) { return "https://put", nil }}
+	svc := track.NewService(&mockRepo{}, st)
+
+	_, key, _, err := svc.PresignUpload(context.Background(), "bc-1", "nightcall")
+	if err != nil {
+		t.Fatalf("presign: %v", err)
+	}
+	if strings.HasSuffix(key, ".") {
+		t.Fatalf("key = %q, want no trailing dot", key)
+	}
+	if !strings.HasPrefix(key, "tracks/bc-1/") {
+		t.Fatalf("key = %q, want it scoped to the broadcaster", key)
+	}
+}
+
+func TestPresignUpload_PropagatesStorageError(t *testing.T) {
+	sentinel := errors.New("s3 down")
+	st := &mockStorage{presignFn: func(context.Context, string) (string, error) { return "", sentinel }}
+	svc := track.NewService(&mockRepo{}, st)
+
+	if _, _, _, err := svc.PresignUpload(context.Background(), "bc-1", "x.mp3"); !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want %v", err, sentinel)
+	}
+}
