@@ -1,20 +1,37 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../track/models/track_model.dart';
 import '../../track/services/track_service.dart';
+import '../services/lyo_audio_handler.dart';
 
-// Plays a single track's static audio_url — distinct from PlayerNotifier,
-// which pipes live WebSocket frames into just_audio instead.
+// Plays a single track's static audio_url through the app-wide LyoAudioHandler
+// (so the OS media notification / lock screen stay in sync) — distinct from
+// PlayerNotifier, which pipes live WebSocket frames into just_audio instead.
 class RecordedPlayerNotifier extends ChangeNotifier {
-  RecordedPlayerNotifier({TrackService? trackService})
-      : _trackSvc = trackService ?? const TrackService(ApiClient());
+  RecordedPlayerNotifier({
+    required LyoAudioHandler audioHandler,
+    TrackService? trackService,
+  })  : _audioHandler = audioHandler,
+        _trackSvc = trackService ?? const TrackService(ApiClient()) {
+    _stateSub = _audioHandler.playbackState.listen((s) {
+      isPlaying = s.playing;
+      notifyListeners();
+    });
+    _posSub = _audioHandler.positionStream.listen((p) {
+      position = p;
+      notifyListeners();
+    });
+    _durSub = _audioHandler.durationStream.listen((d) {
+      duration = d ?? Duration.zero;
+      notifyListeners();
+    });
+  }
 
+  final LyoAudioHandler _audioHandler;
   final TrackService _trackSvc;
-  final AudioPlayer _player = AudioPlayer();
 
   Track? track;
   String? error;
@@ -23,7 +40,7 @@ class RecordedPlayerNotifier extends ChangeNotifier {
   Duration position = Duration.zero;
   Duration duration = Duration.zero;
 
-  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<dynamic>? _stateSub;
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration?>? _durSub;
 
@@ -38,10 +55,6 @@ class RecordedPlayerNotifier extends ChangeNotifier {
   }
 
   Future<void> load(String trackId, String? token) async {
-    await _stateSub?.cancel();
-    await _posSub?.cancel();
-    await _durSub?.cancel();
-
     track = null;
     isLoading = true;
     error = null;
@@ -49,27 +62,12 @@ class RecordedPlayerNotifier extends ChangeNotifier {
 
     try {
       final t = await _trackSvc.getTrack(trackId, token: token);
-      final d = await _player.setUrl(t.audioUrl);
+      await _audioHandler.loadTrack(t);
 
       track = t;
-      duration = d ?? Duration.zero;
+      duration = _audioHandler.duration;
       isLoading = false;
       notifyListeners();
-
-      _stateSub = _player.playerStateStream.listen((s) {
-        isPlaying = s.playing;
-        notifyListeners();
-      });
-      _posSub = _player.positionStream.listen((p) {
-        position = p;
-        notifyListeners();
-      });
-      _durSub = _player.durationStream.listen((d) {
-        duration = d ?? Duration.zero;
-        notifyListeners();
-      });
-
-      await _player.play();
     } catch (_) {
       isLoading = false;
       error = 'Could not load this track. Try again.';
@@ -78,22 +76,19 @@ class RecordedPlayerNotifier extends ChangeNotifier {
   }
 
   void togglePlayPause() {
-    if (_player.playing) {
-      _player.pause();
+    if (_audioHandler.playing) {
+      _audioHandler.pause();
     } else {
-      _player.play();
+      _audioHandler.play();
     }
   }
 
-  void seek(Duration to) => _player.seek(to);
+  void seek(Duration to) => _audioHandler.seek(to);
 
   // Stops playback and clears the track — used when the mini player is
   // dismissed. Unlike dispose(), this notifier stays alive for the next track.
   Future<void> close() async {
-    await _stateSub?.cancel();
-    await _posSub?.cancel();
-    await _durSub?.cancel();
-    await _player.stop();
+    await _audioHandler.stop();
     track = null;
     isPlaying = false;
     position = Duration.zero;
@@ -106,7 +101,6 @@ class RecordedPlayerNotifier extends ChangeNotifier {
     _stateSub?.cancel();
     _posSub?.cancel();
     _durSub?.cancel();
-    _player.dispose();
     super.dispose();
   }
 }

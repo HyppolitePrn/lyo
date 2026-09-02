@@ -52,6 +52,8 @@ class MiniPlayerState {
     this.artColor1 = const Color(0xFF1A1A1A),
     this.artColor2 = const Color(0xFF3A3A3A),
     this.type = PlayerType.live,
+    this.position = Duration.zero,
+    this.duration = Duration.zero,
   });
 
   final bool isVisible;
@@ -61,6 +63,8 @@ class MiniPlayerState {
   final Color artColor1;
   final Color artColor2;
   final PlayerType type;
+  final Duration position;
+  final Duration duration;
 
   MiniPlayerState copyWith({
     bool? isVisible,
@@ -70,6 +74,8 @@ class MiniPlayerState {
     Color? artColor1,
     Color? artColor2,
     PlayerType? type,
+    Duration? position,
+    Duration? duration,
   }) =>
       MiniPlayerState(
         isVisible: isVisible ?? this.isVisible,
@@ -79,5 +85,7 @@ class MiniPlayerState {
         artColor1: artColor1 ?? this.artColor1,
         artColor2: artColor2 ?? this.artColor2,
         type: type ?? this.type,
+        position: position ?? this.position,
+        duration: duration ?? this.duration,
       );
 }

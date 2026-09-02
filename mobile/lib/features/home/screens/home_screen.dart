@@ -146,6 +146,8 @@ class HomeScreen extends StatelessWidget {
                         artColor1: trackColors(recordedTrack.id)[0],
                         artColor2: trackColors(recordedTrack.id)[1],
                         type: PlayerType.recorded,
+                        position: recorded.position,
+                        duration: recorded.duration,
                       )
                     : home.miniPlayer,
                 onTap: () {
@@ -681,6 +683,7 @@ class _EpisodeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
