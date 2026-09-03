@@ -46,6 +46,20 @@ jobs:
           BUILD_NUM=${GITHUB_RUN_NUMBER}
           sed -i "s/^version:.*/version: $VERSION+$BUILD_NUM/" mobile/pubspec.yaml
 
+      # A release APK cannot talk plain HTTP: cleartext is allowed in the debug
+      # and profile manifests only. Baking an http:// base URL into a signed
+      # build would therefore ship an app that fails every request at runtime —
+      # caught here instead of after publication.
+      - name: Verify the release API URL is HTTPS
+        env:
+          API_BASE_URL: ${{ secrets.VPS_URL }}
+        run: |
+          case "$API_BASE_URL" in
+            https://*) echo "API base URL is HTTPS" ;;
+            "") echo "::error::VPS_URL is not set"; exit 1 ;;
+            *) echo "::error::VPS_URL must be an https:// URL, got a cleartext one"; exit 1 ;;
+          esac
+
       - name: Build signed release APK
         working-directory: mobile
         run: flutter build apk --release --dart-define=API_BASE_URL=${{ secrets.VPS_URL }}

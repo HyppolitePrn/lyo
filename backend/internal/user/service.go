@@ -13,6 +13,14 @@ import (
 // ErrInvalidCredentials is returned when email/password do not match.
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
+// selfServiceRole is the only role an account can obtain by registering.
+// Nothing in the HTTP surface raises a role: Repository.Update writes username
+// and email only, and no handler passes a caller-supplied role anywhere. A
+// promotion to broadcaster or admin is therefore an operator action on the
+// database, which is what makes "you cannot become an admin without already
+// being one" a property of the code rather than a convention.
+const selfServiceRole = auth.RoleUser
+
 // Service handles user registration and authentication business logic.
 type Service struct {
 	repo    Repository
@@ -31,7 +39,7 @@ func (s *Service) Register(ctx context.Context, username, email, password string
 		return auth.TokenPair{}, fmt.Errorf("hash password: %w", err)
 	}
 
-	u, err := s.repo.Create(ctx, username, email, string(hash), auth.RoleUser)
+	u, err := s.repo.Create(ctx, username, email, string(hash), selfServiceRole)
 	if err != nil {
 		return auth.TokenPair{}, err
 	}

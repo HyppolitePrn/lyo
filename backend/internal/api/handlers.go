@@ -363,7 +363,7 @@ func (h *Handlers) Login(ctx context.Context, req LoginRequestObject) (LoginResp
 	}), nil
 }
 
-func (h *Handlers) RefreshToken(_ context.Context, req RefreshTokenRequestObject) (RefreshTokenResponseObject, error) {
+func (h *Handlers) RefreshToken(ctx context.Context, req RefreshTokenRequestObject) (RefreshTokenResponseObject, error) {
 	claims, err := h.authSvc.Verify(req.Body.RefreshToken)
 	if err != nil {
 		return RefreshToken401JSONResponse{
@@ -374,7 +374,31 @@ func (h *Handlers) RefreshToken(_ context.Context, req RefreshTokenRequestObject
 		}, nil
 	}
 
-	pair, err := h.authSvc.Issue(claims.UserID, claims.Role)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// The role is re-read from the database, never carried over from the token
+	// being exchanged. Minting the new pair from claims.Role would make a role
+	// self-perpetuating: an account demoted out of admin — or deleted — would
+	// keep renewing admin tokens from its last refresh token, indefinitely.
+	u, err := h.userSvc.GetByID(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, user.ErrNotFound) {
+			return RefreshToken401JSONResponse{
+				UnauthorizedJSONResponse: UnauthorizedJSONResponse{
+					Code:    401,
+					Message: "invalid or expired refresh token",
+				},
+			}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "refresh token timeout", "route", "POST /auth/refresh")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	pair, err := h.authSvc.Issue(claims.UserID, u.Role)
 	if err != nil {
 		return nil, err
 	}
