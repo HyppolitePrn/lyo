@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/observability"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
 )
 
@@ -18,13 +19,14 @@ const maxChunkBytes = 1 << 20 // 1 MiB per audio chunk
 // IngestHandler upgrades broadcaster connections to WebSocket and fans audio
 // chunks out through the stream's Hub.
 type IngestHandler struct {
-	svc    *Service
-	auth   *auth.Service
-	logger *slog.Logger
+	svc     *Service
+	auth    *auth.Service
+	logger  *slog.Logger
+	metrics *observability.Metrics
 }
 
-func NewIngestHandler(svc *Service, authSvc *auth.Service, logger *slog.Logger) *IngestHandler {
-	return &IngestHandler{svc: svc, auth: authSvc, logger: logger}
+func NewIngestHandler(svc *Service, authSvc *auth.Service, logger *slog.Logger, metrics *observability.Metrics) *IngestHandler {
+	return &IngestHandler{svc: svc, auth: authSvc, logger: logger, metrics: metrics}
 }
 
 func (h *IngestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +125,7 @@ func (h *IngestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if msgType != websocket.MessageBinary {
 			continue // ignore text frames
 		}
+		h.metrics.BytesIngested(loopCtx, len(data))
 		hub.Broadcast(loopCtx, data)
 	}
 }

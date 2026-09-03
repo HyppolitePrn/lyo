@@ -87,6 +87,12 @@ func main() {
 	}
 	logger := obs.Logger
 
+	metrics, err := observability.NewMetrics()
+	if err != nil {
+		logger.Error("cannot register metrics", "err", err)
+		os.Exit(1)
+	}
+
 	// ── Database pool ────────────────────────────────────────────────────────
 	poolCfg, err := pgxpool.ParseConfig(cfg.Database.URL)
 	if err != nil {
@@ -129,7 +135,7 @@ func main() {
 	pwResetSvc := passwordreset.NewService(pwResetRepo, userRepo, mailSvc, logger)
 
 	streamRepo := streaming.NewRepository(pool)
-	streamSvc := streaming.NewService(streamRepo, cfg.Stream.BufferSize, logger)
+	streamSvc := streaming.NewService(streamRepo, cfg.Stream.BufferSize, logger, metrics)
 
 	s3Storage, err := storage.New(cfg.S3)
 	if err != nil {
@@ -167,10 +173,10 @@ func main() {
 	api.HandlerFromMux(strict, r)
 
 	// WebSocket endpoints (out-of-band, not in OpenAPI spec)
-	ingestH := streaming.NewIngestHandler(streamSvc, authSvc, logger)
+	ingestH := streaming.NewIngestHandler(streamSvc, authSvc, logger, metrics)
 	r.Get("/streams/{id}/ingest", ingestH.ServeHTTP)
 
-	listenH := streaming.NewListenHandler(streamSvc, authSvc, logger)
+	listenH := streaming.NewListenHandler(streamSvc, authSvc, logger, metrics)
 	r.Get("/streams/{id}/listen", listenH.ServeHTTP)
 
 	srv := &http.Server{

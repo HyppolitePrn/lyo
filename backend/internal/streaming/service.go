@@ -4,6 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
+
+	"github.com/hyppoliteprn/lyo/internal/observability"
 )
 
 // Service manages stream lifecycle and the pool of active Hubs.
@@ -13,14 +16,16 @@ type Service struct {
 	mu      sync.Mutex
 	bufSize int
 	logger  *slog.Logger
+	metrics *observability.Metrics
 }
 
-func NewService(repo StreamRepository, bufSize int, logger *slog.Logger) *Service {
+func NewService(repo StreamRepository, bufSize int, logger *slog.Logger, metrics *observability.Metrics) *Service {
 	return &Service{
 		repo:    repo,
 		hubs:    make(map[string]*Hub),
 		bufSize: bufSize,
 		logger:  logger,
+		metrics: metrics,
 	}
 }
 
@@ -40,11 +45,12 @@ func (s *Service) StartStream(ctx context.Context, broadcasterID, title, descrip
 		return nil, err
 	}
 
-	hub := NewHub(s.bufSize, s.logger)
+	hub := NewHub(s.bufSize, s.logger, s.metrics)
 	s.mu.Lock()
 	s.hubs[stream.ID] = hub
 	s.mu.Unlock()
 
+	s.metrics.StreamStarted(ctx)
 	s.logger.Info("stream started",
 		slog.String("stream_id", stream.ID),
 		slog.String("broadcaster_id", broadcasterID))
@@ -66,6 +72,7 @@ func (s *Service) EndStream(ctx context.Context, id, broadcasterID string) (*Str
 	}
 	s.mu.Unlock()
 
+	s.metrics.StreamEnded(ctx, time.Since(stream.StartedAt).Seconds())
 	s.logger.Info("stream ended", slog.String("stream_id", id))
 	return stream, nil
 }

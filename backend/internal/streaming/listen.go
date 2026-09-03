@@ -11,19 +11,21 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/observability"
 	"github.com/hyppoliteprn/lyo/pkg/middleware"
 )
 
 // ListenHandler upgrades listener connections to WebSocket and streams audio
 // chunks from the stream's Hub to the client.
 type ListenHandler struct {
-	svc    *Service
-	auth   *auth.Service
-	logger *slog.Logger
+	svc     *Service
+	auth    *auth.Service
+	logger  *slog.Logger
+	metrics *observability.Metrics
 }
 
-func NewListenHandler(svc *Service, authSvc *auth.Service, logger *slog.Logger) *ListenHandler {
-	return &ListenHandler{svc: svc, auth: authSvc, logger: logger}
+func NewListenHandler(svc *Service, authSvc *auth.Service, logger *slog.Logger, metrics *observability.Metrics) *ListenHandler {
+	return &ListenHandler{svc: svc, auth: authSvc, logger: logger, metrics: metrics}
 }
 
 func (h *ListenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +89,12 @@ func (h *ListenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ch := hub.Subscribe(listenerID)
 	defer hub.Unsubscribe(listenerID)
 
+	// disconnectReason is set by whichever exit path is taken below, so the
+	// gauge and the reason counter always move together exactly once.
+	disconnectReason := observability.ReasonClient
+	h.metrics.ListenerConnected(ctx)
+	defer func() { h.metrics.ListenerDisconnected(context.WithoutCancel(ctx), disconnectReason) }()
+
 	// Derive a context that is cancelled when either the client disconnects
 	// or EndStream is called (hub.Done() fires), whichever comes first.
 	loopCtx, loopCancel := context.WithCancel(ctx)
@@ -110,15 +118,19 @@ func (h *ListenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		case chunk, ok := <-ch:
 			if !ok {
+				// The hub closed the channel: the broadcaster ended the stream.
+				disconnectReason = observability.ReasonStreamEnded
 				return
 			}
 			if err := conn.Write(loopCtx, websocket.MessageBinary, chunk); err != nil {
+				disconnectReason = observability.ReasonWriteFailed
 				h.logger.Info("listener disconnected",
 					slog.String("stream_id", streamID),
 					slog.String("listener_id", listenerID),
 					slog.Any("reason", err))
 				return
 			}
+			h.metrics.BytesDelivered(loopCtx, len(chunk))
 		}
 	}
 }
