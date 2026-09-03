@@ -24,6 +24,7 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/features"
+	"github.com/hyppoliteprn/lyo/internal/incident"
 	"github.com/hyppoliteprn/lyo/internal/observability"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/playlist"
@@ -69,7 +70,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := observability.NewLogger(cfg.Obs.LogLevel)
+	// Telemetry first: everything below logs through the provider it returns,
+	// so traces, metrics and logs share one resource identity from line one.
+	otelCtx, otelCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	obs, err := observability.Setup(otelCtx, observability.Config{
+		Enabled:        cfg.Obs.Enabled,
+		ServiceName:    cfg.Obs.ServiceName,
+		ServiceVersion: cfg.Obs.ServiceVersion,
+		Environment:    cfg.Obs.Environment,
+		OTLPEndpoint:   cfg.Obs.OTLPEndpoint,
+		LogLevel:       cfg.Obs.LogLevel,
+	})
+	otelCancel()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "observability error: %v\n", err)
+		os.Exit(1)
+	}
+	logger := obs.Logger
+
+	metrics, err := observability.NewMetrics()
+	if err != nil {
+		logger.Error("cannot register metrics", "err", err)
+		os.Exit(1)
+	}
 
 	// ── Database pool ────────────────────────────────────────────────────────
 	poolCfg, err := pgxpool.ParseConfig(cfg.Database.URL)
@@ -113,7 +136,7 @@ func main() {
 	pwResetSvc := passwordreset.NewService(pwResetRepo, userRepo, mailSvc, logger)
 
 	streamRepo := streaming.NewRepository(pool)
-	streamSvc := streaming.NewService(streamRepo, cfg.Stream.BufferSize, logger)
+	streamSvc := streaming.NewService(streamRepo, cfg.Stream.BufferSize, logger, metrics)
 
 	s3Storage, err := storage.New(cfg.S3)
 	if err != nil {
@@ -125,6 +148,12 @@ func main() {
 	playlistRepo := playlist.NewRepository(pool)
 	playlistSvc := playlist.NewService(playlistRepo)
 
+	incidentRepo := incident.NewRepository(pool)
+	incidentSvc := incident.NewService(incidentRepo, mailSvc, logger)
+	// nil when PROMETHEUS_URL is unset: the supervision endpoint then serves
+	// incidents without live metrics rather than failing.
+	promClient := observability.NewPrometheusClient(cfg.Obs.PrometheusURL)
+
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
@@ -135,12 +164,14 @@ func main() {
 	}))
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RequestID)
+	r.Use(middleware.Trace(cfg.Obs.ServiceName))
 	r.Use(middleware.Logger(logger))
 	r.Use(middleware.Authenticate(authSvc))
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, playlistSvc, getUserByIDUC, updateUserByIDUC, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, playlistSvc,
+			getUserByIDUC, updateUserByIDUC, incidentSvc, metricsQuerier(promClient), logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,
@@ -150,11 +181,17 @@ func main() {
 	api.HandlerFromMux(strict, r)
 
 	// WebSocket endpoints (out-of-band, not in OpenAPI spec)
-	ingestH := streaming.NewIngestHandler(streamSvc, authSvc, logger)
+	ingestH := streaming.NewIngestHandler(streamSvc, authSvc, logger, metrics)
 	r.Get("/streams/{id}/ingest", ingestH.ServeHTTP)
 
-	listenH := streaming.NewListenHandler(streamSvc, authSvc, logger)
+	listenH := streaming.NewListenHandler(streamSvc, authSvc, logger, metrics)
 	r.Get("/streams/{id}/listen", listenH.ServeHTTP)
+
+	// Grafana's alert webhook. Out of the OpenAPI contract for the same reason
+	// as the WebSocket endpoints: the body is Grafana's schema, and the caller
+	// is infrastructure that cannot mint a JWT.
+	alertH := incident.NewWebhookHandler(incidentSvc, cfg.Obs.AlertWebhookSecret, logger)
+	r.Post("/internal/alerts", alertH.ServeHTTP)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
@@ -183,6 +220,22 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "err", err)
 	}
+	// Flush buffered spans, metrics and logs — otherwise the last window of
+	// telemetry before a deploy, which is exactly the interesting one, is lost.
+	if err := obs.Shutdown(ctx); err != nil {
+		logger.Error("telemetry shutdown error", "err", err)
+	}
+}
+
+// metricsQuerier converts a possibly-nil client into a possibly-nil interface.
+// Assigning a nil *PrometheusClient straight to the interface would produce a
+// non-nil interface holding a nil pointer, and the handler's nil check would
+// no longer fire.
+func metricsQuerier(c *observability.PrometheusClient) api.MetricsQuerier {
+	if c == nil {
+		return nil
+	}
+	return c
 }
 
 func runMigrations(db *sql.DB) error {

@@ -94,7 +94,11 @@ type Handlers struct {
 	playlistSvc      PlaylistService
 	getUserByIDUC    GetUserByIDUsecase
 	updateUserByIDUC UpdateUserByIDUsecase
-	logger           *slog.Logger
+	incidentSvc      IncidentService
+	// metricsSvc is optional: nil means no Prometheus is configured and the
+	// supervision endpoint reports incidents without live metrics.
+	metricsSvc MetricsQuerier
+	logger     *slog.Logger
 }
 
 func NewHandlers(
@@ -107,6 +111,8 @@ func NewHandlers(
 	playlistSvc PlaylistService,
 	getUserByIDUC GetUserByIDUsecase,
 	updateUserByIDUC UpdateUserByIDUsecase,
+	incidentSvc IncidentService,
+	metricsSvc MetricsQuerier,
 	logger *slog.Logger,
 ) *Handlers {
 	return &Handlers{
@@ -119,6 +125,8 @@ func NewHandlers(
 		playlistSvc:      playlistSvc,
 		getUserByIDUC:    getUserByIDUC,
 		updateUserByIDUC: updateUserByIDUC,
+		incidentSvc:      incidentSvc,
+		metricsSvc:       metricsSvc,
 		logger:           logger,
 	}
 }

@@ -176,6 +176,17 @@ class _ProfileBody extends StatelessWidget {
               onTap: () => context.push('/favorites'),
             ),
           ],
+          // Admin-only entry point. The screen and the API both re-check the
+          // role; hiding the tile just keeps it out of everyone else's way.
+          if (auth.isAdmin && flags.isEnabled('admin_supervision')) ...[
+            const SizedBox(height: lyoGapM),
+            _NavTile(
+              icon: Icons.monitor_heart_outlined,
+              label: 'Supervision',
+              dark: dark,
+              onTap: () => context.push('/admin/supervision'),
+            ),
+          ],
           const SizedBox(height: lyoGapXXL),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(

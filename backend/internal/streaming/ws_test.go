@@ -34,22 +34,25 @@ type wsFixture struct {
 	svc     *Service
 	authSvc *auth.Service
 	repo    *fakeStreamRepo
+	// metric reads back the current value of one instrument by name.
+	metric func(name string) int64
 }
 
 func newWSFixture(t *testing.T, repo *fakeStreamRepo) *wsFixture {
 	t.Helper()
 	authSvc := testAuthSvc()
-	svc := NewService(repo, 8, testLogger())
+	metrics, sum := collectingMetrics(t)
+	svc := NewService(repo, 8, testLogger(), metrics)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(authSvc))
-	r.Get("/streams/{id}/ingest", NewIngestHandler(svc, authSvc, testLogger()).ServeHTTP)
-	r.Get("/streams/{id}/listen", NewListenHandler(svc, authSvc, testLogger()).ServeHTTP)
+	r.Get("/streams/{id}/ingest", NewIngestHandler(svc, authSvc, testLogger(), metrics).ServeHTTP)
+	r.Get("/streams/{id}/listen", NewListenHandler(svc, authSvc, testLogger(), metrics).ServeHTTP)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	return &wsFixture{srv: srv, svc: svc, authSvc: authSvc, repo: repo}
+	return &wsFixture{srv: srv, svc: svc, authSvc: authSvc, repo: repo, metric: sum}
 }
 
 func (f *wsFixture) wsURL(path string) string {
@@ -403,4 +406,50 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition was not met within 5s")
+}
+
+// waitForMetric polls until an instrument reaches want, running tick between
+// attempts. Disconnects are recorded by the handler goroutine after the client
+// has already gone, so the value cannot be read synchronously.
+func (f *wsFixture) waitForMetric(t *testing.T, name string, want int64, tick func()) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	var got int64
+	for time.Now().Before(deadline) {
+		if got = f.metric(name); got == want {
+			return
+		}
+		if tick != nil {
+			tick()
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s = %d, want %d", name, got, want)
+}
+
+// TestListen_ListenerGaugeReturnsToZero is the leak check: a listener count
+// that only ever goes up would make every capacity reading on the supervision
+// dashboard wrong, and the drift is invisible without asserting it.
+func TestListen_ListenerGaugeReturnsToZero(t *testing.T) {
+	f := newWSFixture(t, &fakeStreamRepo{})
+	f.liveStream(t, "s1", "bc-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, status := f.dial(t, ctx, "/streams/s1/listen", "audio-stream", "")
+	if status != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", status)
+	}
+	f.waitForMetric(t, "lyo.listeners.active", 1, nil)
+
+	// CloseNow, not Close: the listen loop only writes, so it never reads the
+	// close frame a graceful handshake would wait for.
+	_ = conn.CloseNow()
+
+	// The loop is parked on its channel and only learns the client is gone
+	// when a write fails, so keep the stream flowing until it notices.
+	broadcast := func() { f.svc.Hub("s1").Broadcast(ctx, Chunk("audio")) }
+	f.waitForMetric(t, "lyo.listeners.active", 0, broadcast)
+	f.waitForMetric(t, "lyo.listener.disconnect", 1, nil)
 }

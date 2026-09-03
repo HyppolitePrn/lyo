@@ -18,6 +18,13 @@ services:
       SMTP_PORT: "1025"
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      PROMETHEUS_URL: http://prometheus:9090
+      # Same expression as the grafana service below — the two ends of the alert
+      # webhook must hold the identical value or every notification 401s. This
+      # `environment` entry deliberately overrides any ALERT_WEBHOOK_SECRET in
+      # ../.env, so the secret has exactly one source: Compose's own environment.
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-lyo_dev_alert_secret}
     depends_on:
       postgres:
         condition: service_healthy
@@ -25,6 +32,8 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     restart: unless-stopped
 
   # ── Database ─────────────────────────────────────────────────────────────────
@@ -113,6 +122,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - tempo
     restart: unless-stopped
 
   prometheus:
@@ -130,11 +140,24 @@ services:
       - "3100:3100"
     restart: unless-stopped
 
+  tempo:
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./tempo.yml:/etc/tempo.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo API / Grafana datasource
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:11.6.1
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Expanded by Grafana into the provisioned webhook contact point. Shares
+      # the expression above with the backend, so both ends always agree.
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-lyo_dev_alert_secret}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -143,6 +166,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - tempo
     restart: unless-stopped
 
 volumes:
@@ -151,3 +175,4 @@ volumes:
   pgadmin_data:
   prometheus_data:
   grafana_data:
+  tempo_data:

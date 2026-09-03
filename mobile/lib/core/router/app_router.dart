@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 
+import '../../features/admin/screens/supervision_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
@@ -92,6 +93,12 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/favorites',
       builder: (context, state) => const FavoritesScreen(),
+    ),
+    // Admin supervision. The screen re-checks the role, and the backend
+    // rejects every request below admin regardless.
+    GoRoute(
+      path: '/admin/supervision',
+      builder: (context, state) => const SupervisionScreen(),
     ),
   ],
 );

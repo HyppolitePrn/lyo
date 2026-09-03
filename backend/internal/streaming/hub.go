@@ -7,6 +7,8 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+
+	"github.com/hyppoliteprn/lyo/internal/observability"
 )
 
 // Chunk is an immutable slice of audio bytes from the broadcaster.
@@ -20,9 +22,10 @@ type Hub struct {
 	listeners  map[string]chan Chunk
 	bufferSize int
 	logger     *slog.Logger
+	metrics    *observability.Metrics
 }
 
-func NewHub(bufferSize int, logger *slog.Logger) *Hub {
+func NewHub(bufferSize int, logger *slog.Logger, metrics *observability.Metrics) *Hub {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Hub{
 		ctx:        ctx,
@@ -30,6 +33,7 @@ func NewHub(bufferSize int, logger *slog.Logger) *Hub {
 		listeners:  make(map[string]chan Chunk),
 		bufferSize: bufferSize,
 		logger:     logger,
+		metrics:    metrics,
 	}
 }
 
@@ -94,6 +98,10 @@ func (h *Hub) Broadcast(ctx context.Context, chunk Chunk) {
 				case <-ctx.Done():
 					return
 				default:
+					// Back-pressure engaging: this listener hears a gap while
+					// the broadcaster keeps running (ADR 003). Counted, because
+					// it is a degraded experience that no error rate reports.
+					h.metrics.ChunkDropped(ctx)
 					h.logger.Warn("listener buffer full, dropping chunk",
 						slog.String("listener_id", e.id))
 				}

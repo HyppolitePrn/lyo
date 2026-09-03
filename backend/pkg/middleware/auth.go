@@ -10,7 +10,10 @@ import (
 
 type contextKey string
 
-const claimsKey contextKey = "claims"
+const (
+	claimsKey        contextKey = "claims"
+	tokenRejectedKey contextKey = "token_rejected"
+)
 
 // Authenticate extracts and validates the Bearer token.
 // It stores the claims in the request context for downstream handlers.
@@ -25,7 +28,13 @@ func Authenticate(svc *auth.Service) func(http.Handler) http.Handler {
 			token := strings.TrimPrefix(header, "Bearer ")
 			claims, err := svc.Verify(token)
 			if err != nil {
-				next.ServeHTTP(w, r)
+				// Still permissive (ADR 007) — the request continues as
+				// anonymous. But record that a token *was* presented and
+				// failed, so a handler can answer 401 "your session is over"
+				// instead of 403 "you lack the role", which is what an expired
+				// token otherwise looks like to the caller.
+				ctx := context.WithValue(r.Context(), tokenRejectedKey, true)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 			ctx := context.WithValue(r.Context(), claimsKey, claims)
@@ -46,6 +55,15 @@ func RequireRole(min auth.Role) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// TokenRejected reports whether the request carried a Bearer token that failed
+// verification — expired, tampered with, or signed by another key. It is the
+// only way to tell "logged out" from "never logged in", since Authenticate
+// treats both as anonymous.
+func TokenRejected(ctx context.Context) bool {
+	rejected, _ := ctx.Value(tokenRejectedKey).(bool)
+	return rejected
 }
 
 // ClaimsFromContext retrieves the JWT claims stored by Authenticate.
