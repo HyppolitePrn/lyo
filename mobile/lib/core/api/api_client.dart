@@ -9,8 +9,13 @@ const String _baseUrl = String.fromEnvironment(
   defaultValue: 'http://10.0.2.2:8080', // Android emulator → host machine
 );
 
-// WebSocket scheme derived from HTTP base URL
-String get _wsBase => _baseUrl.replaceFirst('http', 'ws');
+// WebSocket scheme derived from the HTTP base URL. In production the API is
+// served over TLS (see docs/adr/012-tls-reverse-proxy.md), so this must yield
+// wss:// there — a ws:// URL against an https:// host simply fails to connect,
+// and a release APK cannot fall back to cleartext either.
+String get _wsBase => _baseUrl.startsWith('https://')
+    ? _baseUrl.replaceFirst('https://', 'wss://')
+    : _baseUrl.replaceFirst('http://', 'ws://');
 
 class ApiException implements Exception {
   const ApiException(this.statusCode, this.message);

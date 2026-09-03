@@ -103,6 +103,26 @@ func TestRegister_Success(t *testing.T) {
 	}
 }
 
+// Registration is the only self-service path that creates an account, and it
+// takes no role argument. This pins the row it writes to the lowest role, so
+// the day someone threads a caller-supplied role through Register, it fails.
+func TestRegister_AlwaysCreatesPlainUser(t *testing.T) {
+	var got auth.Role
+	svc := user.NewService(&mockRepo{
+		createFn: func(_ context.Context, _, _, _ string, role auth.Role) (*user.User, error) {
+			got = role
+			return fakeUser("secret"), nil
+		},
+	}, newTestAuthSvc())
+
+	if _, err := svc.Register(context.Background(), "mallory", "m@example.com", "secret"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != auth.RoleUser {
+		t.Fatalf("Register created the account with role %q, want %q", got, auth.RoleUser)
+	}
+}
+
 func TestRegister_PropagatesUniqueViolation(t *testing.T) {
 	dbErr := &pgconn.PgError{Code: "23505"}
 	svc := user.NewService(&mockRepo{

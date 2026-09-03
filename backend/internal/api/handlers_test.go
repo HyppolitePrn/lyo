@@ -31,6 +31,7 @@ import (
 type mockUserService struct {
 	registerFn func(ctx context.Context, username, email, password string) (auth.TokenPair, error)
 	loginFn    func(ctx context.Context, email, password string) (auth.TokenPair, error)
+	getByIDFn  func(ctx context.Context, id string) (*user.User, error)
 }
 
 func (m *mockUserService) Register(ctx context.Context, username, email, password string) (auth.TokenPair, error) {
@@ -39,8 +40,11 @@ func (m *mockUserService) Register(ctx context.Context, username, email, passwor
 func (m *mockUserService) Login(ctx context.Context, email, password string) (auth.TokenPair, error) {
 	return m.loginFn(ctx, email, password)
 }
-func (m *mockUserService) GetByID(_ context.Context, _ string) (*user.User, error) {
-	return nil, errors.New("not implemented")
+func (m *mockUserService) GetByID(ctx context.Context, id string) (*user.User, error) {
+	if m.getByIDFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.getByIDFn(ctx, id)
 }
 func (m *mockUserService) AddFavoriteTrack(_ context.Context, _, _ string) error    { return nil }
 func (m *mockUserService) RemoveFavoriteTrack(_ context.Context, _, _ string) error { return nil }
@@ -305,7 +309,10 @@ func TestRefreshTokenHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := post(t, newTestRouter(nil, authSvc, nil, nil, nil), "/auth/refresh",
+	svc := &mockUserService{getByIDFn: func(context.Context, string) (*user.User, error) {
+		return &user.User{Role: auth.RoleUser}, nil
+	}}
+	w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/refresh",
 		`{"refresh_token":"`+pair.RefreshToken+`"}`)
 
 	if w.Code != http.StatusOK {

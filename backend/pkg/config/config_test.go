@@ -19,6 +19,7 @@ var optionalVars = []string{
 	"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "EMAIL_FROM",
 	"S3_BUCKET_NAME", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY",
 	"S3_ENDPOINT", "S3_PUBLIC_ENDPOINT",
+	"TRUSTED_PROXY", "CORS_ALLOWED_ORIGINS", "APP_ENV",
 }
 
 // setRequired sets the two variables Load panics without and clears the rest.
@@ -140,5 +141,67 @@ func TestLoad_PanicsWhenRequiredVarMissing(t *testing.T) {
 			}()
 			_, _ = config.Load()
 		})
+	}
+}
+
+func TestLoad_ProxyDefaults(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	// Off by default: a server that trusts X-Forwarded-For without a proxy in
+	// front lets any caller choose the address that ends up in the audit log.
+	if cfg.Server.TrustedProxy {
+		t.Fatal("TrustedProxy defaults to true")
+	}
+	if len(cfg.Server.CORSAllowedOrigins) != 2 {
+		t.Fatalf("unexpected default CORS origins: %v", cfg.Server.CORSAllowedOrigins)
+	}
+}
+
+func TestLoad_CORSOriginsFromEnv(t *testing.T) {
+	setRequired(t)
+	t.Setenv("CORS_ALLOWED_ORIGINS", " https://lyo.app , https://admin.lyo.app ,")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"https://lyo.app", "https://admin.lyo.app"}
+	if len(cfg.Server.CORSAllowedOrigins) != len(want) {
+		t.Fatalf("got %v, want %v", cfg.Server.CORSAllowedOrigins, want)
+	}
+	for i, o := range want {
+		if cfg.Server.CORSAllowedOrigins[i] != o {
+			t.Fatalf("got %v, want %v", cfg.Server.CORSAllowedOrigins, want)
+		}
+	}
+}
+
+func TestLoad_RejectsShortJWTSecret(t *testing.T) {
+	setRequired(t)
+	t.Setenv("JWT_SECRET", "too-short")
+
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected a short JWT_SECRET to be rejected")
+	}
+}
+
+// Production must not be able to come up on a directly exposed socket: TLS and
+// the security headers live in the reverse proxy, so bypassing it silently
+// downgrades every request to plaintext HTTP.
+func TestLoad_ProductionRequiresProxy(t *testing.T) {
+	setRequired(t)
+	t.Setenv("APP_ENV", "production")
+
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected production without TRUSTED_PROXY to be rejected")
+	}
+
+	t.Setenv("TRUSTED_PROXY", "true")
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("production with TRUSTED_PROXY=true should load: %v", err)
 	}
 }

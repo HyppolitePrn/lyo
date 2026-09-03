@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -24,6 +25,16 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
+	// TrustedProxy tells the server it sits behind a reverse proxy that
+	// terminates TLS (see docker/Caddyfile), and that X-Forwarded-For may
+	// therefore be believed. It must stay false whenever the server is
+	// reachable directly: any client can set that header, so trusting it on an
+	// exposed socket lets a caller forge its own address in the audit log.
+	TrustedProxy bool
+	// CORSAllowedOrigins lists the browser origins allowed to call the API.
+	// The mobile client is unaffected (CORS is a browser rule), so in
+	// production this only needs the web front-end's own origin.
+	CORSAllowedOrigins []string
 }
 
 type DatabaseConfig struct {
@@ -97,6 +108,9 @@ func Load() (*Config, error) {
 			ReadTimeout:  getDuration("SERVER_READ_TIMEOUT", 30*time.Second),
 			WriteTimeout: getDuration("SERVER_WRITE_TIMEOUT", 30*time.Second),
 			IdleTimeout:  getDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
+			TrustedProxy: getBool("TRUSTED_PROXY", false),
+			CORSAllowedOrigins: getList("CORS_ALLOWED_ORIGINS",
+				[]string{"http://localhost:*", "http://127.0.0.1:*"}),
 		},
 		Database: DatabaseConfig{
 			URL:          requireEnv("DATABASE_URL"),
@@ -139,7 +153,27 @@ func Load() (*Config, error) {
 			PublicEndpoint:  getEnv("S3_PUBLIC_ENDPOINT", ""),
 		},
 	}
+
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
+}
+
+// minJWTSecretLen is the floor for the HMAC key. HS256 keys shorter than the
+// hash output are the practical way this deployment gets forged tokens — and a
+// forged token is a forged role, admin included.
+const minJWTSecretLen = 32
+
+func (c *Config) validate() error {
+	if len(c.Auth.JWTSecret) < minJWTSecretLen {
+		return fmt.Errorf("JWT_SECRET must be at least %d characters, got %d",
+			minJWTSecretLen, len(c.Auth.JWTSecret))
+	}
+	if c.Obs.Environment == "production" && !c.Server.TrustedProxy {
+		return fmt.Errorf("production requires TRUSTED_PROXY=true: the API must be served through the TLS reverse proxy, never exposed directly")
+	}
+	return nil
 }
 
 func requireEnv(key string) string {
@@ -173,6 +207,26 @@ func getBool(key string, fallback bool) bool {
 		}
 	}
 	return fallback
+}
+
+// getList reads a comma-separated variable, trimming blanks. An unset or
+// all-blank value falls back rather than yielding an empty allow-list, which
+// for CORS would silently mean "allow nothing".
+func getList(key string, fallback []string) []string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	out := make([]string, 0, strings.Count(raw, ",")+1)
+	for _, part := range strings.Split(raw, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return fallback
+	}
+	return out
 }
 
 func getDuration(key string, fallback time.Duration) time.Duration {

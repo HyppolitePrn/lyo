@@ -4,4 +4,11 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Cleartext HTTP is allowed in debug and profile builds only, so a local
+         backend on http://10.0.2.2:8080 stays reachable. The release build
+         inherits Android's default (cleartext denied from API 28), which is
+         what stops a shipped APK from ever talking plain HTTP to production —
+         where the API is served through the TLS reverse proxy (ADR 012). -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

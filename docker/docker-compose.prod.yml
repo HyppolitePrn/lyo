@@ -1,16 +1,49 @@
 name: lyo-prod
 
 services:
+  # ── Edge / TLS ────────────────────────────────────────────────────────────────
+  # The only container with published ports. Everything below is reachable only
+  # on the Compose network, so the platform has no plaintext entry point.
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # Certificates are issued for this name and for grafana.<name>. Left at
+      # the default, Caddy signs with its internal CA so the stack still comes
+      # up on a machine without a domain.
+      LYO_DOMAIN: ${LYO_DOMAIN:-localhost}
+      # ACME contact address — Let's Encrypt sends expiry warnings here.
+      ACME_EMAIL: ${ACME_EMAIL:-admin@localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Issued certificates and ACME account keys. Without this volume every
+      # restart re-requests certificates and hits Let's Encrypt rate limits.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - grafana
+    restart: unless-stopped
+
   # ── Application ──────────────────────────────────────────────────────────────
   backend:
     image: ghcr.io/${GHCR_OWNER:-hyppoliteprn}/lyo-backend:latest
-    ports:
-      - "${SERVER_PORT:-8080}:8080"
+    # No published port: the API is served through Caddy over TLS only.
+    expose:
+      - "8080"
     env_file: .env
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       PROMETHEUS_URL: http://prometheus:9090
       APP_ENV: production
+      # Behind Caddy the socket peer is always the proxy. This tells the server
+      # to read the client address from X-Forwarded-For instead, so rate limits
+      # and audit logs name the caller rather than the edge container.
+      TRUSTED_PROXY: "true"
+      CORS_ALLOWED_ORIGINS: https://${LYO_DOMAIN:-localhost}
       # Same expression as the grafana service — both ends of the alert webhook
       # resolve from one source and cannot drift apart. Required here: a silent
       # mismatch would mean every alert notification is rejected with a 401.
@@ -73,15 +106,22 @@ services:
   grafana:
     image: grafana/grafana:11.6.1
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Grafana builds absolute URLs (alert links, OAuth redirects) from this.
+      # Without it they point at http://localhost:3000, which is unreachable now
+      # that the port is no longer published.
+      GF_SERVER_ROOT_URL: https://grafana.${LYO_DOMAIN:-localhost}
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
       # Expanded by Grafana into the provisioned webhook contact point.
       ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:?set ALERT_WEBHOOK_SECRET}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    ports:
-      - "3000:3000"
+    # No published port: reached through Caddy at grafana.${LYO_DOMAIN}.
+    expose:
+      - "3000"
     depends_on:
       - prometheus
       - loki
@@ -89,6 +129,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  caddy_data:
+  caddy_config:
   postgres_data:
   prometheus_data:
   grafana_data:

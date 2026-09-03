@@ -99,4 +99,9 @@ jobs:
           script: |
             cd ${{ secrets.VPS_DEPLOY_PATH }}
             docker compose -f docker-compose.prod.yml pull backend
-            docker compose -f docker-compose.prod.yml up -d backend
+            # `up -d` (not `up -d backend`): the backend no longer publishes a
+            # port, so it is only reachable once the Caddy edge is running. A
+            # backend-only deploy on a host that predates the reverse proxy
+            # would take the API offline. Compose recreates changed services
+            # only, so this stays a no-op for everything else.
+            docker compose -f docker-compose.prod.yml up -d

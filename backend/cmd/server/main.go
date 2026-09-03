@@ -155,8 +155,15 @@ func main() {
 	promClient := observability.NewPrometheusClient(cfg.Obs.PrometheusURL)
 
 	r := chi.NewRouter()
+	// Only meaningful behind the TLS reverse proxy, which overwrites
+	// X-Forwarded-For with the address it actually saw. On a directly exposed
+	// socket the header is caller-controlled, so it is trusted only when the
+	// deployment says a proxy is in front (config.ServerConfig.TrustedProxy).
+	if cfg.Server.TrustedProxy {
+		r.Use(chimiddleware.RealIP)
+	}
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
+		AllowedOrigins:   cfg.Server.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
