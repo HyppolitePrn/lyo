@@ -1,19 +1,35 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/features/auth/providers/auth_notifier.dart';
+import 'package:mobile/features/auth/services/token_store.dart';
 
 class MockApiClient extends Mock implements ApiClient {}
 
+// Builds a signature-less JWT whose payload carries a real `exp`/`role`. The
+// app only ever decodes the payload — the backend verifies the signature.
+String fakeJwt({required Duration expiresIn, String role = 'user'}) {
+  String seg(Map<String, dynamic> m) =>
+      base64Url.encode(utf8.encode(jsonEncode(m))).replaceAll('=', '');
+  final exp = DateTime.now().toUtc().add(expiresIn).millisecondsSinceEpoch;
+  return '${seg({'alg': 'HS256'})}.'
+      '${seg({'role': role, 'exp': exp ~/ 1000})}.sig';
+}
+
 void main() {
   late MockApiClient mockApi;
+  late InMemoryTokenStore store;
 
   setUp(() {
     mockApi = MockApiClient();
+    store = InMemoryTokenStore();
   });
 
-  AuthNotifier makeNotifier() => AuthNotifier(apiClient: mockApi);
+  AuthNotifier makeNotifier() =>
+      AuthNotifier(apiClient: mockApi, tokenStore: store);
 
   const validTokens = {
     'access_token': 'access-abc',
@@ -240,6 +256,168 @@ void main() {
       expect(notifier.isAnonymous, isTrue);
       expect(notifier.isAuthenticated, isFalse);
       expect(notifier.hasAccess, isTrue);
+    });
+  });
+
+  group('session persistence', () {
+    test('signIn stores the token pair for the next launch', () async {
+      when(
+        () => mockApi.post('/auth/login', any()),
+      ).thenAnswer((_) async => validTokens);
+
+      await makeNotifier().signIn('user@example.com', 'password123');
+
+      expect(await store.read(), (access: 'access-abc', refresh: 'refresh-xyz'));
+    });
+
+    test('signOut clears the stored pair', () async {
+      await store.write(access: 'access-abc', refresh: 'refresh-xyz');
+      final notifier = makeNotifier();
+
+      notifier.signOut();
+      await pumpEventQueue();
+
+      expect(await store.read(), isNull);
+      expect(notifier.accessToken, isNull);
+    });
+  });
+
+  group('restoreSession', () {
+    test('no stored pair — reports no session', () async {
+      final notifier = makeNotifier();
+
+      expect(await notifier.restoreSession(), isFalse);
+      expect(notifier.isAuthenticated, isFalse);
+    });
+
+    test('still-valid access token — restores without a refresh call',
+        () async {
+      final access = fakeJwt(expiresIn: const Duration(minutes: 10));
+      await store.write(access: access, refresh: 'refresh-xyz');
+      when(() => mockApi.get(any(), token: any(named: 'token')))
+          .thenThrow(const ApiException(500, 'profile unavailable'));
+
+      final notifier = makeNotifier();
+      addTearDown(notifier.dispose);
+
+      expect(await notifier.restoreSession(), isTrue);
+      expect(notifier.isAuthenticated, isTrue);
+      expect(notifier.accessToken, access);
+      verifyNever(() => mockApi.post('/auth/refresh', any()));
+    });
+
+    test('expired access token — refreshes and adopts the new pair', () async {
+      await store.write(
+        access: fakeJwt(expiresIn: const Duration(minutes: -5)),
+        refresh: 'refresh-xyz',
+      );
+      final fresh = fakeJwt(expiresIn: const Duration(minutes: 15));
+      when(() => mockApi.post('/auth/refresh', any())).thenAnswer(
+        (_) async => {'access_token': fresh, 'refresh_token': 'refresh-2'},
+      );
+
+      final notifier = makeNotifier();
+      addTearDown(notifier.dispose);
+
+      expect(await notifier.restoreSession(), isTrue);
+      expect(notifier.accessToken, fresh);
+      expect(await store.read(), (access: fresh, refresh: 'refresh-2'));
+    });
+
+    test('expired refresh token — clears the stored pair', () async {
+      await store.write(
+        access: fakeJwt(expiresIn: const Duration(minutes: -5)),
+        refresh: 'refresh-expired',
+      );
+      when(() => mockApi.post('/auth/refresh', any()))
+          .thenThrow(const ApiException(401, 'invalid or expired refresh token'));
+
+      final notifier = makeNotifier();
+
+      expect(await notifier.restoreSession(), isFalse);
+      expect(notifier.isAuthenticated, isFalse);
+      expect(await store.read(), isNull);
+    });
+
+    test('server unreachable — keeps the stored pair for a later retry',
+        () async {
+      await store.write(
+        access: fakeJwt(expiresIn: const Duration(minutes: -5)),
+        refresh: 'refresh-xyz',
+      );
+      when(() => mockApi.post('/auth/refresh', any()))
+          .thenThrow(const ApiException(0, 'Cannot reach the server.'));
+
+      final notifier = makeNotifier();
+
+      expect(await notifier.restoreSession(), isFalse);
+      expect(await store.read(), isNotNull);
+    });
+  });
+
+  group('ensureFreshSession', () {
+    Future<AuthNotifier> signedIn(String access) async {
+      when(() => mockApi.post('/auth/login', any())).thenAnswer(
+        (_) async => {'access_token': access, 'refresh_token': 'refresh-xyz'},
+      );
+      when(() => mockApi.get(any(), token: any(named: 'token')))
+          .thenThrow(const ApiException(500, 'profile unavailable'));
+      final notifier = makeNotifier();
+      await notifier.signIn('user@example.com', 'password123');
+      return notifier;
+    }
+
+    test('token still fresh — no refresh call', () async {
+      final notifier =
+          await signedIn(fakeJwt(expiresIn: const Duration(minutes: 10)));
+      addTearDown(notifier.dispose);
+
+      await notifier.ensureFreshSession();
+
+      verifyNever(() => mockApi.post('/auth/refresh', any()));
+    });
+
+    test('token expired while suspended — refreshes on resume', () async {
+      final notifier =
+          await signedIn(fakeJwt(expiresIn: const Duration(seconds: -1)));
+      addTearDown(notifier.dispose);
+      final fresh = fakeJwt(expiresIn: const Duration(minutes: 15));
+      when(() => mockApi.post('/auth/refresh', any())).thenAnswer(
+        (_) async => {'access_token': fresh, 'refresh_token': 'refresh-2'},
+      );
+
+      await notifier.ensureFreshSession();
+
+      expect(notifier.accessToken, fresh);
+    });
+
+    test('concurrent callers share a single refresh request', () async {
+      final notifier =
+          await signedIn(fakeJwt(expiresIn: const Duration(seconds: -1)));
+      addTearDown(notifier.dispose);
+      when(() => mockApi.post('/auth/refresh', any())).thenAnswer((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        return {
+          'access_token': fakeJwt(expiresIn: const Duration(minutes: 15)),
+          'refresh_token': 'refresh-2',
+        };
+      });
+
+      await Future.wait([
+        notifier.ensureFreshSession(),
+        notifier.ensureFreshSession(),
+      ]);
+
+      verify(() => mockApi.post('/auth/refresh', any())).called(1);
+    });
+
+    test('anonymous session — nothing to refresh', () async {
+      final notifier = makeNotifier();
+      notifier.continueAnonymously();
+
+      await notifier.ensureFreshSession();
+
+      verifyNever(() => mockApi.post('/auth/refresh', any()));
     });
   });
 }
