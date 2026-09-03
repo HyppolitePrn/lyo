@@ -42,6 +42,15 @@ jobs:
       - name: Test (race detector)
         run: go test -race -coverprofile=coverage.out ./...
 
+      # internal/api/api.gen.go is produced by oapi-codegen and is not hand-written,
+      # so it is excluded from the metric the threshold applies to.
+      - name: Enforce coverage threshold (80%)
+        run: |
+          grep -v 'internal/api/api.gen.go' coverage.out > coverage.nogen.out
+          pct=$(go tool cover -func=coverage.nogen.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')
+          echo "Coverage (excluding generated code): ${pct}%"
+          awk -v p="$pct" 'BEGIN { if (p+0 < 80) { print "FAIL: coverage " p "% is below the 80% threshold"; exit 1 } }'
+
       - name: Build
         run: go build ./cmd/server
 

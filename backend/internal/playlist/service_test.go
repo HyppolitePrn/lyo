@@ -107,3 +107,66 @@ func TestDelete_PropagatesRepoError(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestListByOwner_DelegatesToRepo(t *testing.T) {
+	repo := &mockRepo{}
+	repo.listByOwnerFn = func(_ context.Context, ownerID string) ([]playlist.Playlist, error) {
+		return []playlist.Playlist{{ID: "pl-1", OwnerID: ownerID}}, nil
+	}
+
+	got, err := playlist.NewService(repo).ListByOwner(context.Background(), "owner-1")
+	if err != nil {
+		t.Fatalf("list by owner: %v", err)
+	}
+	if len(got) != 1 || got[0].OwnerID != "owner-1" {
+		t.Fatalf("unexpected playlists: %+v", got)
+	}
+}
+
+func TestUpdate_PassesPartialFieldsAndOwnership(t *testing.T) {
+	title := "New title"
+	isPublic := true
+
+	repo := &mockRepo{}
+	var gotID, gotRequester string
+	var gotTitle, gotDesc *string
+	var gotPublic *bool
+	repo.updateFn = func(_ context.Context, id, requesterID string, t, d *string, p *bool) (*playlist.Playlist, error) {
+		gotID, gotRequester, gotTitle, gotDesc, gotPublic = id, requesterID, t, d, p
+		return &playlist.Playlist{ID: id, Title: title, IsPublic: isPublic}, nil
+	}
+
+	got, err := playlist.NewService(repo).Update(context.Background(), "pl-1", "owner-1", &title, nil, &isPublic)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if gotID != "pl-1" || gotRequester != "owner-1" {
+		t.Errorf("called with id=%q requester=%q", gotID, gotRequester)
+	}
+	if gotTitle == nil || *gotTitle != title || gotDesc != nil || gotPublic == nil || !*gotPublic {
+		t.Errorf("partial fields not passed through: title=%v desc=%v public=%v", gotTitle, gotDesc, gotPublic)
+	}
+	if got.Title != title {
+		t.Errorf("title = %q", got.Title)
+	}
+}
+
+func TestRemoveTrack_PassesOwnershipThrough(t *testing.T) {
+	repo := &mockRepo{}
+	var got [3]string
+	repo.removeTrackFn = func(_ context.Context, id, requesterID, trackID string) (*playlist.Playlist, error) {
+		got = [3]string{id, requesterID, trackID}
+		return &playlist.Playlist{ID: id, TrackIDs: []string{}}, nil
+	}
+
+	p, err := playlist.NewService(repo).RemoveTrack(context.Background(), "pl-1", "owner-1", "t-1")
+	if err != nil {
+		t.Fatalf("remove track: %v", err)
+	}
+	if got != [3]string{"pl-1", "owner-1", "t-1"} {
+		t.Fatalf("called with %v", got)
+	}
+	if len(p.TrackIDs) != 0 {
+		t.Fatalf("track ids = %v", p.TrackIDs)
+	}
+}

@@ -509,3 +509,249 @@ func TestUpdateUserByIDHandler_DuplicateEmail(t *testing.T) {
 		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body)
 	}
 }
+
+// ── Timeout handling ──────────────────────────────────────────────────────────
+
+// A context deadline anywhere below the handler must surface as 503, never 500:
+// the client should retry, not treat it as a bug.
+func TestAuthHandlers_TimeoutIs503(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	userID := uuid.New()
+
+	t.Run("register", func(t *testing.T) {
+		svc := &mockUserService{
+			registerFn: func(context.Context, string, string, string) (auth.TokenPair, error) {
+				return auth.TokenPair{}, context.DeadlineExceeded
+			},
+		}
+		w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/register",
+			`{"username":"alice","email":"alice@example.com","password":"secret123"}`)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+		}
+	})
+
+	t.Run("login", func(t *testing.T) {
+		svc := &mockUserService{
+			loginFn: func(context.Context, string, string) (auth.TokenPair, error) {
+				return auth.TokenPair{}, context.DeadlineExceeded
+			},
+		}
+		w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/login",
+			`{"email":"alice@example.com","password":"secret123"}`)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+		}
+	})
+
+	t.Run("forgot password", func(t *testing.T) {
+		pwSvc := &mockPasswordResetService{
+			forgotPasswordFn: func(context.Context, string) error { return context.DeadlineExceeded },
+		}
+		w := post(t, newTestRouter(nil, authSvc, nil, nil, pwSvc), "/auth/forgot-password",
+			`{"email":"alice@example.com"}`)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+		}
+	})
+
+	t.Run("reset password", func(t *testing.T) {
+		pwSvc := &mockPasswordResetService{
+			resetPasswordFn: func(context.Context, string, string) error { return context.DeadlineExceeded },
+		}
+		w := post(t, newTestRouter(nil, authSvc, nil, nil, pwSvc), "/auth/reset-password",
+			`{"token":"t","password":"newsecret123"}`)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+		}
+	})
+
+	pair, err := authSvc.Issue(userID.String(), auth.RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("get user", func(t *testing.T) {
+		uc := &mockGetUserByIDUsecase{
+			executeFn: func(context.Context, string) (*user.User, error) { return nil, context.DeadlineExceeded },
+		}
+		w := get(t, newTestRouter(nil, authSvc, uc, nil, nil), "/users/me", pair.AccessToken)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+		}
+	})
+
+	t.Run("update user", func(t *testing.T) {
+		uc := &mockUpdateUserByIDUsecase{
+			executeFn: func(context.Context, string, *string, *string) (*user.User, error) {
+				return nil, context.DeadlineExceeded
+			},
+		}
+		w := patch(t, newTestRouter(nil, authSvc, nil, uc, nil), "/users/me", pair.AccessToken, `{"username":"x"}`)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+		}
+	})
+}
+
+// ── Unexpected service failures ───────────────────────────────────────────────
+
+func TestAuthHandlers_UnexpectedErrorIs500(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	sentinel := errors.New("db down")
+
+	t.Run("register", func(t *testing.T) {
+		svc := &mockUserService{
+			registerFn: func(context.Context, string, string, string) (auth.TokenPair, error) {
+				return auth.TokenPair{}, sentinel
+			},
+		}
+		w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/register",
+			`{"username":"alice","email":"alice@example.com","password":"secret123"}`)
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500: %s", w.Code, w.Body)
+		}
+	})
+
+	t.Run("login", func(t *testing.T) {
+		svc := &mockUserService{
+			loginFn: func(context.Context, string, string) (auth.TokenPair, error) {
+				return auth.TokenPair{}, sentinel
+			},
+		}
+		w := post(t, newTestRouter(svc, authSvc, nil, nil, nil), "/auth/login",
+			`{"email":"alice@example.com","password":"secret123"}`)
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500: %s", w.Code, w.Body)
+		}
+	})
+
+	t.Run("reset password", func(t *testing.T) {
+		pwSvc := &mockPasswordResetService{
+			resetPasswordFn: func(context.Context, string, string) error { return sentinel },
+		}
+		w := post(t, newTestRouter(nil, authSvc, nil, nil, pwSvc), "/auth/reset-password",
+			`{"token":"t","password":"newsecret123"}`)
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500: %s", w.Code, w.Body)
+		}
+	})
+}
+
+// A ForgotPassword failure is logged but never surfaced: reporting it would let
+// a caller probe which addresses exist.
+func TestForgotPasswordHandler_HidesServiceFailure(t *testing.T) {
+	pwSvc := &mockPasswordResetService{
+		forgotPasswordFn: func(context.Context, string) error { return errors.New("smtp down") },
+	}
+	w := post(t, newTestRouter(nil, newTestAuthSvc(), nil, nil, pwSvc), "/auth/forgot-password",
+		`{"email":"alice@example.com"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body)
+	}
+}
+
+// ── Not found ─────────────────────────────────────────────────────────────────
+
+// A token for a user who no longer exists must read as unauthenticated, not 500.
+func TestUserHandlers_DeletedUserIs401(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	pair, err := authSvc.Issue(uuid.NewString(), auth.RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("get", func(t *testing.T) {
+		uc := &mockGetUserByIDUsecase{
+			executeFn: func(context.Context, string) (*user.User, error) { return nil, user.ErrNotFound },
+		}
+		w := get(t, newTestRouter(nil, authSvc, uc, nil, nil), "/users/me", pair.AccessToken)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401: %s", w.Code, w.Body)
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		uc := &mockUpdateUserByIDUsecase{
+			executeFn: func(context.Context, string, *string, *string) (*user.User, error) {
+				return nil, user.ErrNotFound
+			},
+		}
+		w := patch(t, newTestRouter(nil, authSvc, nil, uc, nil), "/users/me", pair.AccessToken, `{"username":"x"}`)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401: %s", w.Code, w.Body)
+		}
+	})
+}
+
+func TestUserHandlers_UnexpectedErrorIs500(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	sentinel := errors.New("db down")
+	pair, err := authSvc.Issue(uuid.NewString(), auth.RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	uc := &mockGetUserByIDUsecase{
+		executeFn: func(context.Context, string) (*user.User, error) { return nil, sentinel },
+	}
+	if w := get(t, newTestRouter(nil, authSvc, uc, nil, nil), "/users/me", pair.AccessToken); w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body)
+	}
+
+	uuc := &mockUpdateUserByIDUsecase{
+		executeFn: func(context.Context, string, *string, *string) (*user.User, error) { return nil, sentinel },
+	}
+	w := patch(t, newTestRouter(nil, authSvc, nil, uuc, nil), "/users/me", pair.AccessToken, `{"username":"x"}`)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body)
+	}
+}
+
+// UpdateUserByID accepts an email-only patch and converts the typed email.
+func TestUpdateUserByIDHandler_EmailOnly(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	userID := uuid.New()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	var gotEmail *string
+	uc := &mockUpdateUserByIDUsecase{
+		executeFn: func(_ context.Context, _ string, username, email *string) (*user.User, error) {
+			gotEmail = email
+			if username != nil {
+				t.Fatalf("username should stay nil, got %q", *username)
+			}
+			return &user.User{
+				ID: pgtype.UUID{Bytes: userID, Valid: true}, Username: "alice",
+				Email: "new@example.com", Role: auth.RoleUser,
+				FavoriteTrackIDs: []pgtype.UUID{}, FavoriteStreamIDs: []pgtype.UUID{},
+				FavoritePlaylistIDs: []pgtype.UUID{}, CreatedAt: now, UpdatedAt: now,
+			}, nil
+		},
+	}
+
+	pair, err := authSvc.Issue(userID.String(), auth.RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := patch(t, newTestRouter(nil, authSvc, nil, uc, nil), "/users/me", pair.AccessToken,
+		`{"email":"new@example.com"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body)
+	}
+	if gotEmail == nil || *gotEmail != "new@example.com" {
+		t.Fatalf("email = %v", gotEmail)
+	}
+}
+
+// ── HTTPError ─────────────────────────────────────────────────────────────────
+
+func TestHTTPError_Error(t *testing.T) {
+	err := &api.HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+
+	if got := err.Error(); got != "503: request timeout" {
+		t.Fatalf("Error() = %q", got)
+	}
+}
