@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/features/feature_flags_provider.dart';
+import '../../../core/router/back_navigation.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../providers/auth_notifier.dart';
 import '../widgets/auth_error_banner.dart';
@@ -62,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   tooltip: 'Back',
                   icon: const Icon(Icons.chevron_left),
                   padding: EdgeInsets.zero,
-                  onPressed: () => context.pop(),
+                  onPressed: () => context.popOrGo('/splash'),
                 ),
                 const SizedBox(height: lyoGapXXL),
                 _LogoMark(),

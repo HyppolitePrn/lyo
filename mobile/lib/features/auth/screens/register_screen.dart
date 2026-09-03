@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/router/back_navigation.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../providers/auth_notifier.dart';
 import '../widgets/auth_error_banner.dart';
@@ -99,7 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   tooltip: 'Back',
                   icon: const Icon(Icons.chevron_left),
                   padding: EdgeInsets.zero,
-                  onPressed: () => context.pop(),
+                  onPressed: () => context.popOrGo('/splash'),
                 ),
                 const SizedBox(height: lyoGapXXL),
                 _LogoMark(),
