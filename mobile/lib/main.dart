@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
@@ -18,6 +19,7 @@ import 'features/home/providers/home_notifier.dart';
 import 'features/player/providers/player_notifier.dart';
 import 'features/player/providers/recorded_player_notifier.dart';
 import 'features/player/services/lyo_audio_handler.dart';
+import 'features/player/services/volume_controller.dart';
 import 'features/playlist/providers/playlist_notifier.dart';
 import 'features/track/providers/upload_track_notifier.dart';
 
@@ -35,10 +37,14 @@ Future<void> main() async {
   // still plays in the background either way, this only affects visibility.
   unawaited(Permission.notification.request());
 
+  // One volume for the whole app: the live player and the recorded player
+  // each own an AudioPlayer, and both follow this controller.
+  final volume = VolumeController();
+
   // Lets a track keep playing — with a Spotify-style notification and lock
   // screen controls — after the app is backgrounded.
   final audioHandler = await AudioService.init(
-    builder: LyoAudioHandler.new,
+    builder: () => LyoAudioHandler(volume: volume),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.lyo.mobile.audio',
       androidNotificationChannelName: 'Lyo playback',
@@ -49,13 +55,22 @@ Future<void> main() async {
     ),
   );
 
+  // Reload a session persisted by a previous launch before the first frame,
+  // so a returning user never sees the splash screen flash by.
+  final auth = AuthNotifier();
+  final restored = await auth.restoreSession();
+  final router = createAppRouter(
+    initialLocation: restored ? '/home' : '/splash',
+  );
+
   runApp(
     MultiProvider(
       providers: [
         Provider<FeatureFlags>(create: (_) => const FeatureFlags()),
-        ChangeNotifierProvider(create: (_) => AuthNotifier()),
+        ChangeNotifierProvider.value(value: auth),
         ChangeNotifierProvider(create: (_) => HomeNotifier()),
-        ChangeNotifierProvider(create: (_) => PlayerNotifier()),
+        ChangeNotifierProvider.value(value: volume),
+        ChangeNotifierProvider(create: (_) => PlayerNotifier(volume: volume)),
         ChangeNotifierProvider(
           create: (_) => RecordedPlayerNotifier(audioHandler: audioHandler),
         ),
@@ -65,14 +80,43 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => FavoritesNotifier()),
         ChangeNotifierProvider(create: (_) => SupervisionNotifier()),
       ],
-      child: const LyoApp(),
+      child: LyoApp(router: router),
     ),
   );
-  await DeepLinkListener(appRouter).init();
+  await DeepLinkListener(router).init();
 }
 
-class LyoApp extends StatelessWidget {
-  const LyoApp({super.key});
+class LyoApp extends StatefulWidget {
+  const LyoApp({required this.router, super.key});
+
+  final GoRouter router;
+
+  @override
+  State<LyoApp> createState() => _LyoAppState();
+}
+
+class _LyoAppState extends State<LyoApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The in-app refresh timer does not fire while the process is suspended,
+    // so re-check the access token every time the app comes back to the
+    // foreground.
+    if (state == AppLifecycleState.resumed) {
+      unawaited(context.read<AuthNotifier>().ensureFreshSession());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +125,7 @@ class LyoApp extends StatelessWidget {
       theme: lyoTheme(Brightness.dark),
       darkTheme: lyoTheme(Brightness.dark),
       themeMode: ThemeMode.dark,
-      routerConfig: appRouter,
+      routerConfig: widget.router,
       debugShowCheckedModeBanner: false,
     );
   }

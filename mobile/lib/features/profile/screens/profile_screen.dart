@@ -32,7 +32,9 @@ class ProfileScreen extends StatelessWidget {
       dark: dark,
       onSignOut: () {
         context.read<AuthNotifier>().signOut();
-        context.go('/login');
+        // Splash, not login: it also offers "create account" and "browse
+        // without account", so a sign-out is not a dead end.
+        context.go('/splash');
       },
     );
   }
@@ -69,7 +71,9 @@ class _SignedOutBody extends StatelessWidget {
               ),
               const SizedBox(height: lyoGapL),
               ElevatedButton(
-                onPressed: () => context.go('/login'),
+                // Pushed, not `go`: a guest who changes their mind can pop
+                // straight back to browsing.
+                onPressed: () => context.push('/login'),
                 child: const Text('Se connecter'),
               ),
             ],

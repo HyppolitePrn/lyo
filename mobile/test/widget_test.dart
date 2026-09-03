@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:mobile/core/features/feature_flags_provider.dart';
+import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/auth/providers/auth_notifier.dart';
+import 'package:mobile/features/auth/services/token_store.dart';
 import 'package:mobile/features/broadcaster/providers/broadcaster_notifier.dart';
 import 'package:mobile/features/home/providers/home_notifier.dart';
 import 'package:mobile/features/player/providers/player_notifier.dart';
@@ -19,12 +21,14 @@ void main() {
       MultiProvider(
         providers: [
           Provider<FeatureFlags>(create: (_) => const FeatureFlags()),
-          ChangeNotifierProvider(create: (_) => AuthNotifier()),
+          ChangeNotifierProvider(
+            create: (_) => AuthNotifier(tokenStore: InMemoryTokenStore()),
+          ),
           ChangeNotifierProvider(create: (_) => HomeNotifier()),
           ChangeNotifierProvider(create: (_) => PlayerNotifier()),
           ChangeNotifierProvider(create: (_) => BroadcasterNotifier()),
         ],
-        child: const LyoApp(),
+        child: LyoApp(router: createAppRouter()),
       ),
     );
     expect(find.text('Listen live.\nHear everything.'), findsOneWidget);

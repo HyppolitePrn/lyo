@@ -18,8 +18,12 @@ import '../../features/playlist/screens/playlists_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/track/screens/upload_track_screen.dart';
 
-final GoRouter appRouter = GoRouter(
-  initialLocation: '/splash',
+/// Builds the app router.
+///
+/// [initialLocation] lets `main` skip the splash screen when a persisted
+/// session was restored, so a returning user lands straight on Home.
+GoRouter createAppRouter({String initialLocation = '/splash'}) => GoRouter(
+  initialLocation: initialLocation,
   routes: [
     GoRoute(
       path: '/splash',

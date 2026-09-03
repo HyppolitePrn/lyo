@@ -37,6 +37,16 @@ class AuthService {
     );
   }
 
+  Future<AuthTokens> refresh(String refreshToken) async {
+    final data = await _api.post('/auth/refresh', {
+      'refresh_token': refreshToken,
+    });
+    return AuthTokens(
+      accessToken: data['access_token'] as String,
+      refreshToken: data['refresh_token'] as String,
+    );
+  }
+
   Future<void> forgotPassword(String email) async {
     await _api.post('/auth/forgot-password', {'email': email});
   }

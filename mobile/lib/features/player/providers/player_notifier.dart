@@ -10,6 +10,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../../core/api/api_client.dart';
 import '../models/stream_model.dart';
 import '../services/player_service.dart';
+import '../services/volume_controller.dart';
 
 // ---------------------------------------------------------------------------
 // Custom StreamAudioSource that feeds WebSocket binary frames to just_audio.
@@ -34,12 +35,18 @@ class _WsAudioSource extends StreamAudioSource {
 enum PlayerStatus { idle, connecting, playing, error }
 
 class PlayerNotifier extends ChangeNotifier {
-  PlayerNotifier({ApiClient apiClient = const ApiClient()})
-    : _apiClient = apiClient,
-      _svc = PlayerService(apiClient);
+  PlayerNotifier({
+    ApiClient apiClient = const ApiClient(),
+    VolumeController? volume,
+  }) : _apiClient = apiClient,
+       _svc = PlayerService(apiClient),
+       _volume = volume ?? VolumeController() {
+    _volume.addListener(_applyVolume);
+  }
 
   final ApiClient _apiClient;
   final PlayerService _svc;
+  final VolumeController _volume;
   AudioPlayer? _player;
   WebSocketChannel? _channel;
   StreamController<Uint8List>? _byteController;
@@ -101,6 +108,9 @@ class PlayerNotifier extends ChangeNotifier {
           audioOffloadMode: AndroidAudioOffloadMode.disabled,
         ),
       );
+      // Start at the level the listener already picked, so a stream never
+      // opens louder than the one they were just listening to.
+      _applyVolume();
       // Fire-and-forget: audio setup runs in the background without blocking state.
       _player!
           .setAudioSource(_WsAudioSource(_byteController!.stream))
@@ -122,6 +132,10 @@ class PlayerNotifier extends ChangeNotifier {
       notifyListeners();
       await _cleanup();
     }
+  }
+
+  void _applyVolume() {
+    unawaited(_player?.setVolume(_volume.level));
   }
 
   void _onWsDone() {
@@ -156,6 +170,7 @@ class PlayerNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
+    _volume.removeListener(_applyVolume);
     disconnect();
     super.dispose();
   }

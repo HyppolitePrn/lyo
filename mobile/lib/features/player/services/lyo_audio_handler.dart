@@ -4,14 +4,16 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../track/models/track_model.dart';
+import 'volume_controller.dart';
 
 // Wraps a single just_audio player and exposes it through audio_service, so
 // the OS media notification / lock screen / headset buttons can control the
 // currently playing track even after the app is backgrounded — similar to
 // Spotify's mini controls outside the app.
 class LyoAudioHandler extends BaseAudioHandler with SeekHandler {
-  LyoAudioHandler()
-    : _player = AudioPlayer(
+  LyoAudioHandler({VolumeController? volume})
+    : _volume = volume ?? VolumeController(),
+      _player = AudioPlayer(
         // Audio offload crashes ExoPlayer on some devices for this track
         // format — IllegalArgumentException in DefaultAudioSink.
         androidAudioOffloadPreferences: const AndroidAudioOffloadPreferences(
@@ -19,9 +21,18 @@ class LyoAudioHandler extends BaseAudioHandler with SeekHandler {
         ),
       ) {
     _player.playbackEventStream.listen(_broadcastState, onError: (Object _) {});
+    // The handler outlives every screen, so it owns the subscription for the
+    // whole app session rather than tying it to a widget's lifecycle.
+    _volume.addListener(_applyVolume);
+    _applyVolume();
   }
 
   final AudioPlayer _player;
+  final VolumeController _volume;
+
+  void _applyVolume() {
+    unawaited(_player.setVolume(_volume.level));
+  }
 
   Track? track;
   bool get playing => _player.playing;
