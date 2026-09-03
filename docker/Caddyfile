@@ -1,0 +1,88 @@
+# Lyo — TLS termination and reverse proxy (production).
+#
+# Caddy is the only container with published ports. Everything else (backend,
+# Postgres, Grafana, the observability stack) is reachable solely on the
+# Compose network, so there is no plaintext path into the platform.
+#
+# Certificates are obtained and renewed automatically over ACME. With
+# LYO_DOMAIN left at its default (localhost) Caddy signs with its own internal
+# CA instead, which is what makes `docker compose -f docker-compose.prod.yml up`
+# work on a laptop without owning a domain.
+{
+	email {$ACME_EMAIL:admin@localhost}
+
+	# The admin API can rewrite the running config, including its TLS. Nothing
+	# in this deployment reconfigures Caddy at runtime, so it stays off.
+	admin off
+}
+
+# ── Shared snippets ───────────────────────────────────────────────────────────
+
+(security_headers) {
+	header {
+		# 1 year, subdomains included. Only ever sent over HTTPS by Caddy, so a
+		# plain-HTTP local run cannot pin a browser to a certificate it lacks.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Cross-Origin-Opener-Policy "same-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
+		# Do not advertise the proxy or its version.
+		-Server
+	}
+}
+
+# ── API ───────────────────────────────────────────────────────────────────────
+
+{$LYO_DOMAIN:localhost} {
+	import security_headers
+	encode zstd gzip
+
+	# POST /internal/alerts authenticates Grafana with a shared secret, but it
+	# is infrastructure-to-infrastructure and has no reason to be reachable from
+	# the internet. Grafana still reaches it directly over the Compose network.
+	handle /internal/* {
+		respond 404
+	}
+
+	# Audio ingest/listen upgrade to WebSocket and then stay open for the whole
+	# broadcast. They are matched first so that no body-size limit or buffering
+	# directive is ever applied to a hijacked connection.
+	@websocket {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @websocket {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		# Track audio never transits the API — the mobile app PUTs it straight
+		# to S3 with a presigned URL — so every legitimate body here is JSON.
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy backend:8080
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# ── Grafana (supervision) ─────────────────────────────────────────────────────
+
+grafana.{$LYO_DOMAIN:localhost} {
+	import security_headers
+	encode zstd gzip
+
+	# Grafana serves its live-tailing and alerting UI over WebSocket too.
+	reverse_proxy grafana:3000
+
+	log {
+		output stdout
+		format json
+	}
+}
