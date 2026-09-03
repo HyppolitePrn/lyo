@@ -13,5 +13,6 @@ class FeatureFlags {
     'social_auth': false,
     'playlists': true,
     'favorites': true,
+    'admin_supervision': true,
   };
 }

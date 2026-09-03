@@ -10,6 +10,7 @@ import 'core/deep_links/deep_link_listener.dart';
 import 'core/features/feature_flags_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/lyo_theme.dart';
+import 'features/admin/providers/supervision_notifier.dart';
 import 'features/auth/providers/auth_notifier.dart';
 import 'features/broadcaster/providers/broadcaster_notifier.dart';
 import 'features/favorites/providers/favorites_notifier.dart';
@@ -62,6 +63,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => UploadTrackNotifier()),
         ChangeNotifierProvider(create: (_) => PlaylistNotifier()),
         ChangeNotifierProvider(create: (_) => FavoritesNotifier()),
+        ChangeNotifierProvider(create: (_) => SupervisionNotifier()),
       ],
       child: const LyoApp(),
     ),

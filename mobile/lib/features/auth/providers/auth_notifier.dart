@@ -51,6 +51,7 @@ class AuthNotifier extends ChangeNotifier {
 
   bool get hasAccess => isAuthenticated || isAnonymous;
   bool get isBroadcaster => role == 'broadcaster' || role == 'admin';
+  bool get isAdmin => role == 'admin';
 
   Future<void> fetchProfile() async {
     final token = accessToken;
