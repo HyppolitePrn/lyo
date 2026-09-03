@@ -11,4 +11,5 @@ var Seeds = []Flag{
 	{Name: "transcoding", Enabled: false, Description: "Adaptive bitrate transcoding based on client bandwidth"},
 	{Name: "playlists", Enabled: true, Description: "Playlist creation and management"},
 	{Name: "favorites", Enabled: true, Description: "Favoriting tracks, streams, and playlists"},
+	{Name: "admin_supervision", Enabled: true, Description: "Admin supervision dashboard, incident feed and alert notifications"},
 }

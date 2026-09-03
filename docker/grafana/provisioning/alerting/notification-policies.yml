@@ -1,0 +1,23 @@
+# Every Lyo alert is routed to the backend so it becomes an incident. Critical
+# alerts repeat sooner: a platform that is down and unacknowledged should keep
+# saying so.
+
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: lyo-backend-incidents
+    # Grouping by rule and severity keeps one incident per condition instead of
+    # one per evaluation.
+    group_by: [alertname, severity]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: lyo-backend-incidents
+        object_matchers:
+          - ["severity", "=", "critical"]
+        group_by: [alertname, severity]
+        group_wait: 10s
+        group_interval: 2m
+        repeat_interval: 1h

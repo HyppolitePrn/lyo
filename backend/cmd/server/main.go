@@ -24,6 +24,7 @@ import (
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
 	"github.com/hyppoliteprn/lyo/internal/features"
+	"github.com/hyppoliteprn/lyo/internal/incident"
 	"github.com/hyppoliteprn/lyo/internal/observability"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/playlist"
@@ -147,6 +148,12 @@ func main() {
 	playlistRepo := playlist.NewRepository(pool)
 	playlistSvc := playlist.NewService(playlistRepo)
 
+	incidentRepo := incident.NewRepository(pool)
+	incidentSvc := incident.NewService(incidentRepo, mailSvc, logger)
+	// nil when PROMETHEUS_URL is unset: the supervision endpoint then serves
+	// incidents without live metrics rather than failing.
+	promClient := observability.NewPrometheusClient(cfg.Obs.PrometheusURL)
+
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
@@ -163,7 +170,8 @@ func main() {
 
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, playlistSvc, getUserByIDUC, updateUserByIDUC, logger),
+		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, playlistSvc,
+			getUserByIDUC, updateUserByIDUC, incidentSvc, metricsQuerier(promClient), logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,
@@ -178,6 +186,12 @@ func main() {
 
 	listenH := streaming.NewListenHandler(streamSvc, authSvc, logger, metrics)
 	r.Get("/streams/{id}/listen", listenH.ServeHTTP)
+
+	// Grafana's alert webhook. Out of the OpenAPI contract for the same reason
+	// as the WebSocket endpoints: the body is Grafana's schema, and the caller
+	// is infrastructure that cannot mint a JWT.
+	alertH := incident.NewWebhookHandler(incidentSvc, cfg.Obs.AlertWebhookSecret, logger)
+	r.Post("/internal/alerts", alertH.ServeHTTP)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
@@ -211,6 +225,17 @@ func main() {
 	if err := obs.Shutdown(ctx); err != nil {
 		logger.Error("telemetry shutdown error", "err", err)
 	}
+}
+
+// metricsQuerier converts a possibly-nil client into a possibly-nil interface.
+// Assigning a nil *PrometheusClient straight to the interface would produce a
+// non-nil interface holding a nil pointer, and the handler's nil check would
+// no longer fire.
+func metricsQuerier(c *observability.PrometheusClient) api.MetricsQuerier {
+	if c == nil {
+		return nil
+	}
+	return c
 }
 
 func runMigrations(db *sql.DB) error {

@@ -245,6 +245,95 @@ components:
       properties:
         enabled: { type: boolean }
 
+    # ── Admin: Supervision ────────────────────────────────────────────────────
+    IncidentSeverity:
+      type: string
+      enum: [critical, warning, info]
+
+    IncidentFamily:
+      type: string
+      description: >
+        technical = the platform itself failed.
+        experience = nothing is broken and users are suffering anyway (audio
+        dropped, listeners cut off). The two demand different reactions.
+      enum: [technical, experience]
+
+    IncidentStatus:
+      type: string
+      enum: [firing, acknowledged, resolved]
+
+    Incident:
+      type: object
+      required: [id, title, severity, family, status, started_at]
+      properties:
+        id:              { type: string, format: uuid }
+        rule_uid:        { type: string }
+        title:           { type: string }
+        summary:         { type: string }
+        severity:        { $ref: '#/components/schemas/IncidentSeverity' }
+        family:          { $ref: '#/components/schemas/IncidentFamily' }
+        status:          { $ref: '#/components/schemas/IncidentStatus' }
+        dashboard_url:   { type: string }
+        started_at:      { type: string, format: date-time }
+        acknowledged_at: { type: string, format: date-time }
+        acknowledged_by: { type: string, format: uuid }
+        resolved_at:     { type: string, format: date-time }
+
+    IncidentList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Incident' } }
+
+    UpdateIncidentRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          description: >
+            acknowledge records that an admin owns a firing incident.
+            resolve closes it by hand, for conditions that cleared without
+            Grafana saying so.
+          enum: [acknowledge, resolve]
+
+    IncidentCounts:
+      type: object
+      required: [firing, acknowledged, critical_firing, resolved_24h]
+      properties:
+        firing:          { type: integer }
+        acknowledged:    { type: integer }
+        critical_firing: { type: integer }
+        resolved_24h:    { type: integer }
+
+    SupervisionMetrics:
+      type: object
+      description: >
+        Current platform readings, queried from Prometheus. Every field is
+        optional: a metric with no series yet (no traffic, no live stream) is
+        absent rather than zero, so the client can tell "nothing happened" from
+        "nothing measured".
+      properties:
+        backend_up:               { type: boolean }
+        live_streams:             { type: number }
+        active_listeners:         { type: number }
+        requests_per_second:      { type: number }
+        error_rate_percent:       { type: number }
+        latency_p95_seconds:      { type: number }
+        chunks_dropped_per_second: { type: number }
+
+    SupervisionSummary:
+      type: object
+      required: [incidents, generated_at, metrics_available]
+      properties:
+        incidents:  { $ref: '#/components/schemas/IncidentCounts' }
+        metrics:    { $ref: '#/components/schemas/SupervisionMetrics' }
+        # False when Prometheus is unreachable or unconfigured — the incident
+        # counts stay valid and the client shows the metrics as unavailable
+        # rather than as zero.
+        metrics_available: { type: boolean }
+        generated_at: { type: string, format: date-time }
+
     # ── Health ────────────────────────────────────────────────────────────────
     HealthResponse:
       type: object
@@ -275,6 +364,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     BadRequest:
       description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: Feature disabled, or a dependency timed out
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -817,6 +911,79 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
+
+  # ── Admin: Supervision ──────────────────────────────────────────────────────
+  /admin/supervision:
+    get:
+      operationId: GetSupervisionSummary
+      summary: Platform health at a glance (admin only)
+      tags: [admin]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current metrics and incident counts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupervisionSummary' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/incidents:
+    get:
+      operationId: ListIncidents
+      summary: List incidents, most recent first (admin only)
+      tags: [admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/IncidentStatus' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Incident list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentList' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/incidents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: UpdateIncident
+      summary: Acknowledge or resolve an incident (admin only)
+      tags: [admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateIncidentRequest' }
+      responses:
+        "200":
+          description: Updated incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ── Admin: Feature Flags ────────────────────────────────────────────────────
   /admin/features:

@@ -246,13 +246,15 @@ func (f flagSvc) IsEnabled(_ context.Context, name string) bool { return !f.off[
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
 type fixture struct {
-	handler  http.Handler
-	authSvc  *auth.Service
-	users    *fakeUserSvc
-	tracks   *fakeTrackSvc
-	streams  *fakeStreamSvc
-	playlist *fakePlaylistSvc
-	flags    flagSvc
+	handler   http.Handler
+	authSvc   *auth.Service
+	users     *fakeUserSvc
+	tracks    *fakeTrackSvc
+	streams   *fakeStreamSvc
+	playlist  *fakePlaylistSvc
+	flags     flagSvc
+	incidents *fakeIncidentSvc
+	metrics   *fakeMetrics
 }
 
 func newFixture(t *testing.T, disabledFlags ...string) *fixture {
@@ -263,19 +265,21 @@ func newFixture(t *testing.T, disabledFlags ...string) *fixture {
 	}
 
 	f := &fixture{
-		authSvc:  newTestAuthSvc(),
-		users:    &fakeUserSvc{},
-		tracks:   &fakeTrackSvc{tracks: map[string]*track.Track{}},
-		streams:  &fakeStreamSvc{streams: map[string]*streaming.Stream{}},
-		playlist: &fakePlaylistSvc{playlists: map[string]*playlist.Playlist{}},
-		flags:    flagSvc{off: off},
+		authSvc:   newTestAuthSvc(),
+		users:     &fakeUserSvc{},
+		tracks:    &fakeTrackSvc{tracks: map[string]*track.Track{}},
+		streams:   &fakeStreamSvc{streams: map[string]*streaming.Stream{}},
+		playlist:  &fakePlaylistSvc{playlists: map[string]*playlist.Playlist{}},
+		flags:     flagSvc{off: off},
+		incidents: &fakeIncidentSvc{},
+		metrics:   &fakeMetrics{},
 	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(f.authSvc))
 	strict := api.NewStrictHandlerWithOptions(
 		api.NewHandlers(f.users, f.authSvc, f.streams, f.flags, nil, f.tracks, f.playlist, nil, nil,
-			slog.New(slog.NewTextHandler(io.Discard, nil))),
+			f.incidents, f.metrics, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {

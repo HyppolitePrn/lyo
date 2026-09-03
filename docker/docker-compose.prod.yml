@@ -9,6 +9,7 @@ services:
     env_file: .env
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      PROMETHEUS_URL: http://prometheus:9090
       APP_ENV: production
     depends_on:
       postgres:
@@ -70,6 +71,9 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Interpolated into the provisioned webhook contact point; must match the
+      # backend's ALERT_WEBHOOK_SECRET.
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:?set ALERT_WEBHOOK_SECRET}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

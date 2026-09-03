@@ -1,0 +1,24 @@
+# Where a firing alert goes. Grafana's own notification is transient — it lives
+# in a UI nobody is watching at 3am — so every alert is also POSTed to the Lyo
+# backend, which turns it into a durable, acknowledgeable incident that admins
+# can see from the mobile app.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: lyo-backend-incidents
+    receivers:
+      - uid: lyo-webhook
+        type: webhook
+        settings:
+          url: http://backend:8080/internal/alerts
+          httpMethod: POST
+          # Grafana cannot mint a JWT, so the webhook is authenticated with a
+          # shared secret. It must match ALERT_WEBHOOK_SECRET in the backend's
+          # environment; an unset secret disables the endpoint outright.
+          authorization_scheme: Bearer
+          authorization_credentials: ${ALERT_WEBHOOK_SECRET}
+        # Resolved notifications are what close the incident, so they are not
+        # optional here.
+        disableResolveMessage: false

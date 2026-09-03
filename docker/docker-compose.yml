@@ -19,6 +19,7 @@ services:
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      PROMETHEUS_URL: http://prometheus:9090
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,6 +150,9 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Interpolated into the provisioned webhook contact point; must match the
+      # backend's ALERT_WEBHOOK_SECRET.
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-change_me_to_a_random_string}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

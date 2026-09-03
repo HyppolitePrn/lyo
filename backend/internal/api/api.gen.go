@@ -35,6 +35,66 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for IncidentFamily.
+const (
+	Experience IncidentFamily = "experience"
+	Technical  IncidentFamily = "technical"
+)
+
+// Valid indicates whether the value is a known member of the IncidentFamily enum.
+func (e IncidentFamily) Valid() bool {
+	switch e {
+	case Experience:
+		return true
+	case Technical:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IncidentSeverity.
+const (
+	Critical IncidentSeverity = "critical"
+	Info     IncidentSeverity = "info"
+	Warning  IncidentSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the IncidentSeverity enum.
+func (e IncidentSeverity) Valid() bool {
+	switch e {
+	case Critical:
+		return true
+	case Info:
+		return true
+	case Warning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IncidentStatus.
+const (
+	Acknowledged IncidentStatus = "acknowledged"
+	Firing       IncidentStatus = "firing"
+	Resolved     IncidentStatus = "resolved"
+)
+
+// Valid indicates whether the value is a known member of the IncidentStatus enum.
+func (e IncidentStatus) Valid() bool {
+	switch e {
+	case Acknowledged:
+		return true
+	case Firing:
+		return true
+	case Resolved:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Role.
 const (
 	RoleAdmin       Role = "admin"
@@ -71,6 +131,24 @@ func (e StreamStatus) Valid() bool {
 	case Ended:
 		return true
 	case Live:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateIncidentRequestAction.
+const (
+	Acknowledge UpdateIncidentRequestAction = "acknowledge"
+	Resolve     UpdateIncidentRequestAction = "resolve"
+)
+
+// Valid indicates whether the value is a known member of the UpdateIncidentRequestAction enum.
+func (e UpdateIncidentRequestAction) Valid() bool {
+	switch e {
+	case Acknowledge:
+		return true
+	case Resolve:
 		return true
 	default:
 		return false
@@ -142,6 +220,46 @@ type HealthResponse struct {
 
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
+
+// Incident defines model for Incident.
+type Incident struct {
+	AcknowledgedAt *time.Time          `json:"acknowledged_at,omitempty"`
+	AcknowledgedBy *openapi_types.UUID `json:"acknowledged_by,omitempty"`
+	DashboardUrl   *string             `json:"dashboard_url,omitempty"`
+
+	// Family technical = the platform itself failed. experience = nothing is broken and users are suffering anyway (audio dropped, listeners cut off). The two demand different reactions.
+	Family     IncidentFamily     `json:"family"`
+	Id         openapi_types.UUID `json:"id"`
+	ResolvedAt *time.Time         `json:"resolved_at,omitempty"`
+	RuleUid    *string            `json:"rule_uid,omitempty"`
+	Severity   IncidentSeverity   `json:"severity"`
+	StartedAt  time.Time          `json:"started_at"`
+	Status     IncidentStatus     `json:"status"`
+	Summary    *string            `json:"summary,omitempty"`
+	Title      string             `json:"title"`
+}
+
+// IncidentCounts defines model for IncidentCounts.
+type IncidentCounts struct {
+	Acknowledged   int `json:"acknowledged"`
+	CriticalFiring int `json:"critical_firing"`
+	Firing         int `json:"firing"`
+	Resolved24h    int `json:"resolved_24h"`
+}
+
+// IncidentFamily technical = the platform itself failed. experience = nothing is broken and users are suffering anyway (audio dropped, listeners cut off). The two demand different reactions.
+type IncidentFamily string
+
+// IncidentList defines model for IncidentList.
+type IncidentList struct {
+	Items []Incident `json:"items"`
+}
+
+// IncidentSeverity defines model for IncidentSeverity.
+type IncidentSeverity string
+
+// IncidentStatus defines model for IncidentStatus.
+type IncidentStatus string
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -229,6 +347,27 @@ type StreamList struct {
 // StreamStatus defines model for StreamStatus.
 type StreamStatus string
 
+// SupervisionMetrics Current platform readings, queried from Prometheus. Every field is optional: a metric with no series yet (no traffic, no live stream) is absent rather than zero, so the client can tell "nothing happened" from "nothing measured".
+type SupervisionMetrics struct {
+	ActiveListeners        *float32 `json:"active_listeners,omitempty"`
+	BackendUp              *bool    `json:"backend_up,omitempty"`
+	ChunksDroppedPerSecond *float32 `json:"chunks_dropped_per_second,omitempty"`
+	ErrorRatePercent       *float32 `json:"error_rate_percent,omitempty"`
+	LatencyP95Seconds      *float32 `json:"latency_p95_seconds,omitempty"`
+	LiveStreams            *float32 `json:"live_streams,omitempty"`
+	RequestsPerSecond      *float32 `json:"requests_per_second,omitempty"`
+}
+
+// SupervisionSummary defines model for SupervisionSummary.
+type SupervisionSummary struct {
+	GeneratedAt time.Time      `json:"generated_at"`
+	Incidents   IncidentCounts `json:"incidents"`
+
+	// Metrics Current platform readings, queried from Prometheus. Every field is optional: a metric with no series yet (no traffic, no live stream) is absent rather than zero, so the client can tell "nothing happened" from "nothing measured".
+	Metrics          *SupervisionMetrics `json:"metrics,omitempty"`
+	MetricsAvailable bool                `json:"metrics_available"`
+}
+
 // ToggleFlagRequest defines model for ToggleFlagRequest.
 type ToggleFlagRequest struct {
 	Enabled bool `json:"enabled"`
@@ -255,6 +394,15 @@ type Track struct {
 type TrackList struct {
 	Items []Track `json:"items"`
 }
+
+// UpdateIncidentRequest defines model for UpdateIncidentRequest.
+type UpdateIncidentRequest struct {
+	// Action acknowledge records that an admin owns a firing incident. resolve closes it by hand, for conditions that cleared without Grafana saying so.
+	Action UpdateIncidentRequestAction `json:"action"`
+}
+
+// UpdateIncidentRequestAction acknowledge records that an admin owns a firing incident. resolve closes it by hand, for conditions that cleared without Grafana saying so.
+type UpdateIncidentRequestAction string
 
 // UpdatePlaylistRequest defines model for UpdatePlaylistRequest.
 type UpdatePlaylistRequest struct {
@@ -291,11 +439,20 @@ type Forbidden = Error
 // NotFound defines model for NotFound.
 type NotFound = Error
 
+// ServiceUnavailable defines model for ServiceUnavailable.
+type ServiceUnavailable = Error
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
 // UnprocessableEntity defines model for UnprocessableEntity.
 type UnprocessableEntity = Error
+
+// ListIncidentsParams defines parameters for ListIncidents.
+type ListIncidentsParams struct {
+	Status *IncidentStatus `form:"status,omitempty" json:"status,omitempty"`
+	Limit  *int            `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // ListStreamsParams defines parameters for ListStreams.
 type ListStreamsParams struct {
@@ -311,6 +468,9 @@ type ListTracksParams struct {
 
 // ToggleFeatureFlagJSONRequestBody defines body for ToggleFeatureFlag for application/json ContentType.
 type ToggleFeatureFlagJSONRequestBody = ToggleFlagRequest
+
+// UpdateIncidentJSONRequestBody defines body for UpdateIncident for application/json ContentType.
+type UpdateIncidentJSONRequestBody = UpdateIncidentRequest
 
 // ForgotPasswordJSONRequestBody defines body for ForgotPassword for application/json ContentType.
 type ForgotPasswordJSONRequestBody = ForgotPasswordRequest
@@ -356,6 +516,15 @@ type ServerInterface interface {
 	// Enable or disable a feature flag (admin only)
 	// (PATCH /admin/features/{name}/toggle)
 	ToggleFeatureFlag(w http.ResponseWriter, r *http.Request, name string)
+	// List incidents, most recent first (admin only)
+	// (GET /admin/incidents)
+	ListIncidents(w http.ResponseWriter, r *http.Request, params ListIncidentsParams)
+	// Acknowledge or resolve an incident (admin only)
+	// (PATCH /admin/incidents/{id})
+	UpdateIncident(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// Platform health at a glance (admin only)
+	// (GET /admin/supervision)
+	GetSupervisionSummary(w http.ResponseWriter, r *http.Request)
 	// Request a password reset email
 	// (POST /auth/forgot-password)
 	ForgotPassword(w http.ResponseWriter, r *http.Request)
@@ -464,6 +633,24 @@ func (_ Unimplemented) ListFeatureFlags(w http.ResponseWriter, r *http.Request) 
 // Enable or disable a feature flag (admin only)
 // (PATCH /admin/features/{name}/toggle)
 func (_ Unimplemented) ToggleFeatureFlag(w http.ResponseWriter, r *http.Request, name string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List incidents, most recent first (admin only)
+// (GET /admin/incidents)
+func (_ Unimplemented) ListIncidents(w http.ResponseWriter, r *http.Request, params ListIncidentsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Acknowledge or resolve an incident (admin only)
+// (PATCH /admin/incidents/{id})
+func (_ Unimplemented) UpdateIncident(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Platform health at a glance (admin only)
+// (GET /admin/supervision)
+func (_ Unimplemented) GetSupervisionSummary(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -704,6 +891,98 @@ func (siw *ServerInterfaceWrapper) ToggleFeatureFlag(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ToggleFeatureFlag(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListIncidents operation middleware
+func (siw *ServerInterfaceWrapper) ListIncidents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListIncidentsParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListIncidents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateIncident operation middleware
+func (siw *ServerInterfaceWrapper) UpdateIncident(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateIncident(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSupervisionSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetSupervisionSummary(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSupervisionSummary(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1609,6 +1888,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/admin/features/{name}/toggle", wrapper.ToggleFeatureFlag)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/incidents", wrapper.ListIncidents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/admin/incidents/{id}", wrapper.UpdateIncident)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/supervision", wrapper.GetSupervisionSummary)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/auth/forgot-password", wrapper.ForgotPassword)
 	})
 	r.Group(func(r chi.Router) {
@@ -1711,6 +1999,8 @@ type ForbiddenJSONResponse Error
 
 type NotFoundJSONResponse Error
 
+type ServiceUnavailableJSONResponse Error
+
 type UnauthorizedJSONResponse Error
 
 type UnprocessableEntityJSONResponse Error
@@ -1790,6 +2080,156 @@ type ToggleFeatureFlag404JSONResponse struct{ NotFoundJSONResponse }
 func (response ToggleFeatureFlag404JSONResponse) VisitToggleFeatureFlagResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListIncidentsRequestObject struct {
+	Params ListIncidentsParams
+}
+
+type ListIncidentsResponseObject interface {
+	VisitListIncidentsResponse(w http.ResponseWriter) error
+}
+
+type ListIncidents200JSONResponse IncidentList
+
+func (response ListIncidents200JSONResponse) VisitListIncidentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListIncidents401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListIncidents401JSONResponse) VisitListIncidentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListIncidents403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListIncidents403JSONResponse) VisitListIncidentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListIncidents503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListIncidents503JSONResponse) VisitListIncidentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateIncidentRequestObject struct {
+	Id   openapi_types.UUID `json:"id"`
+	Body *UpdateIncidentJSONRequestBody
+}
+
+type UpdateIncidentResponseObject interface {
+	VisitUpdateIncidentResponse(w http.ResponseWriter) error
+}
+
+type UpdateIncident200JSONResponse Incident
+
+func (response UpdateIncident200JSONResponse) VisitUpdateIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateIncident400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateIncident400JSONResponse) VisitUpdateIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateIncident401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateIncident401JSONResponse) VisitUpdateIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateIncident403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateIncident403JSONResponse) VisitUpdateIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateIncident404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateIncident404JSONResponse) VisitUpdateIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateIncident503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response UpdateIncident503JSONResponse) VisitUpdateIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetSupervisionSummaryRequestObject struct {
+}
+
+type GetSupervisionSummaryResponseObject interface {
+	VisitGetSupervisionSummaryResponse(w http.ResponseWriter) error
+}
+
+type GetSupervisionSummary200JSONResponse SupervisionSummary
+
+func (response GetSupervisionSummary200JSONResponse) VisitGetSupervisionSummaryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetSupervisionSummary401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSupervisionSummary401JSONResponse) VisitGetSupervisionSummaryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetSupervisionSummary403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSupervisionSummary403JSONResponse) VisitGetSupervisionSummaryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetSupervisionSummary503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetSupervisionSummary503JSONResponse) VisitGetSupervisionSummaryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -2746,6 +3186,15 @@ type StrictServerInterface interface {
 	// Enable or disable a feature flag (admin only)
 	// (PATCH /admin/features/{name}/toggle)
 	ToggleFeatureFlag(ctx context.Context, request ToggleFeatureFlagRequestObject) (ToggleFeatureFlagResponseObject, error)
+	// List incidents, most recent first (admin only)
+	// (GET /admin/incidents)
+	ListIncidents(ctx context.Context, request ListIncidentsRequestObject) (ListIncidentsResponseObject, error)
+	// Acknowledge or resolve an incident (admin only)
+	// (PATCH /admin/incidents/{id})
+	UpdateIncident(ctx context.Context, request UpdateIncidentRequestObject) (UpdateIncidentResponseObject, error)
+	// Platform health at a glance (admin only)
+	// (GET /admin/supervision)
+	GetSupervisionSummary(ctx context.Context, request GetSupervisionSummaryRequestObject) (GetSupervisionSummaryResponseObject, error)
 	// Request a password reset email
 	// (POST /auth/forgot-password)
 	ForgotPassword(ctx context.Context, request ForgotPasswordRequestObject) (ForgotPasswordResponseObject, error)
@@ -2920,6 +3369,89 @@ func (sh *strictHandler) ToggleFeatureFlag(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ToggleFeatureFlagResponseObject); ok {
 		if err := validResponse.VisitToggleFeatureFlagResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListIncidents operation middleware
+func (sh *strictHandler) ListIncidents(w http.ResponseWriter, r *http.Request, params ListIncidentsParams) {
+	var request ListIncidentsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListIncidents(ctx, request.(ListIncidentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListIncidents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListIncidentsResponseObject); ok {
+		if err := validResponse.VisitListIncidentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateIncident operation middleware
+func (sh *strictHandler) UpdateIncident(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request UpdateIncidentRequestObject
+
+	request.Id = id
+
+	var body UpdateIncidentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateIncident(ctx, request.(UpdateIncidentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateIncident")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateIncidentResponseObject); ok {
+		if err := validResponse.VisitUpdateIncidentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSupervisionSummary operation middleware
+func (sh *strictHandler) GetSupervisionSummary(w http.ResponseWriter, r *http.Request) {
+	var request GetSupervisionSummaryRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSupervisionSummary(ctx, request.(GetSupervisionSummaryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSupervisionSummary")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSupervisionSummaryResponseObject); ok {
+		if err := validResponse.VisitGetSupervisionSummaryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
