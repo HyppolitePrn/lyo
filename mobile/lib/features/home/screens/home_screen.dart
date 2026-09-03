@@ -192,10 +192,8 @@ class HomeScreen extends StatelessWidget {
             selectedFontSize: 10,
             unselectedFontSize: 10,
             elevation: 0,
-            selectedLabelStyle:
-                const TextStyle(fontWeight: FontWeight.w700),
-            unselectedLabelStyle:
-                const TextStyle(fontWeight: FontWeight.w500),
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
             items: const [
               BottomNavigationBarItem(
                 icon: Icon(Icons.home_outlined),
@@ -241,8 +239,7 @@ class HomeScreen extends StatelessWidget {
       case 1:
         return const BrowseTab();
       case 2:
-        return _StubBody(
-            label: 'Search', icon: Icons.search, dark: dark);
+        return _StubBody(label: 'Search', icon: Icons.search, dark: dark);
       case 3:
         return const ProfileScreen();
       default:
@@ -322,31 +319,40 @@ class _HomeBodyState extends State<_HomeBody> {
           ),
           Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius: BorderRadius.circular(12),
+              ExcludeSemantics(
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.notifications_none,
+                    size: 18,
+                    color: dark ? lyoSubDark : lyoSubLight,
+                  ),
                 ),
-                child: Icon(Icons.notifications_none,
-                    size: 18, color: dark ? lyoSubDark : lyoSubLight),
               ),
               const SizedBox(width: lyoGapS),
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: lyoAccent,
-                  borderRadius: BorderRadius.circular(19),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  initialsFrom(auth.username),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+              Semantics(
+                label: 'Signed in as ${auth.username ?? 'guest'}',
+                excludeSemantics: true,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: lyoAccent,
+                    borderRadius: BorderRadius.circular(19),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    initialsFrom(auth.username),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -366,32 +372,50 @@ class _HomeBodyState extends State<_HomeBody> {
       future: notifier.liveStreams,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: lyoAccent, strokeWidth: 2),
+          return Center(
+            child: Semantics(
+              label: 'Loading live streams',
+              liveRegion: true,
+              child: const CircularProgressIndicator(
+                color: lyoAccent,
+                strokeWidth: 2,
+              ),
+            ),
           );
         }
         if (snapshot.hasError) {
           return Center(
-            child: Text(
-              'Could not load streams',
-              style: TextStyle(color: textSub, fontSize: lyoCaption),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                'Could not load streams',
+                style: TextStyle(color: textSub, fontSize: lyoCaption),
+              ),
             ),
           );
         }
         final streams = snapshot.data ?? const <LiveStream>[];
         if (streams.isEmpty) {
           return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.radio,
-                    size: 32, color: lyoAccent.withValues(alpha: 0.35)),
-                const SizedBox(height: 8),
-                Text(
-                  'No live streams right now',
-                  style: TextStyle(color: textSub, fontSize: lyoCaption),
-                ),
-              ],
+            child: Semantics(
+              liveRegion: true,
+              label: 'No live streams right now',
+              excludeSemantics: true,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.radio,
+                    size: 32,
+                    color: lyoAccent.withValues(alpha: 0.35),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No live streams right now',
+                    style: TextStyle(color: textSub, fontSize: lyoCaption),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -446,18 +470,24 @@ class _HomeBodyState extends State<_HomeBody> {
                 ),
               ),
               const SizedBox(width: lyoGapS),
-              Text(
-                'Live Now',
-                style: TextStyle(
-                  fontSize: lyoH2,
-                  fontWeight: FontWeight.w700,
-                  color: textPrimary,
+              Semantics(
+                header: true,
+                child: Text(
+                  'Live Now',
+                  style: TextStyle(
+                    fontSize: lyoH2,
+                    fontWeight: FontWeight.w700,
+                    color: textPrimary,
+                  ),
                 ),
               ),
               const Spacer(),
               IconButton(
-                icon: Icon(Icons.refresh,
-                    size: 18, color: dark ? lyoSubDark : lyoSubLight),
+                icon: Icon(
+                  Icons.refresh,
+                  size: 18,
+                  color: dark ? lyoSubDark : lyoSubLight,
+                ),
                 tooltip: 'Refresh',
                 visualDensity: VisualDensity.compact,
                 onPressed: () {
@@ -487,12 +517,15 @@ class _HomeBodyState extends State<_HomeBody> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Recent Episodes',
-                style: TextStyle(
-                  fontSize: lyoH2,
-                  fontWeight: FontWeight.w700,
-                  color: textPrimary,
+              Semantics(
+                header: true,
+                child: Text(
+                  'Recent Episodes',
+                  style: TextStyle(
+                    fontSize: lyoH2,
+                    fontWeight: FontWeight.w700,
+                    color: textPrimary,
+                  ),
                 ),
               ),
               TextButton(
@@ -519,8 +552,7 @@ class _HomeBodyState extends State<_HomeBody> {
           physics: const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: 20),
           itemCount: _episodes.length,
-          separatorBuilder: (_, _) =>
-              Divider(color: border, height: 1),
+          separatorBuilder: (_, _) => Divider(color: border, height: 1),
           itemBuilder: (context, i) => _EpisodeTile(
             episode: _episodes[i],
             textPrimary: textPrimary,
@@ -543,12 +575,15 @@ class _HomeBodyState extends State<_HomeBody> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),
-          child: Text(
-            'Explore',
-            style: TextStyle(
-              fontSize: lyoH2,
-              fontWeight: FontWeight.w700,
-              color: textPrimary,
+          child: Semantics(
+            header: true,
+            child: Text(
+              'Explore',
+              style: TextStyle(
+                fontSize: lyoH2,
+                fontWeight: FontWeight.w700,
+                color: textPrimary,
+              ),
             ),
           ),
         ),
@@ -580,83 +615,94 @@ class _LiveShowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label:
+          'Live: ${show.title}, by ${show.host}, '
+          '${_fmt(show.listeners)} listeners',
+      hint: 'Open the live player',
+      excludeSemantics: true,
       onTap: onTap,
-      child: Container(
-        width: 160,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: show.colors,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 160,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: show.colors,
+            ),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: lyoAccent,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'LIVE',
-                      style: TextStyle(
-                        fontSize: lyoTiny,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: 0.5,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: lyoAccent,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'LIVE',
+                        style: TextStyle(
+                          fontSize: lyoTiny,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
-                  ),
-                  const LiveEQWidget(isPlaying: true),
-                ],
-              ),
-              const Spacer(),
-              Text(
-                show.title,
-                style: const TextStyle(
-                  fontSize: lyoBody2,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  height: 1.2,
+                    const LiveEQWidget(isPlaying: true),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                show.host,
-                style: TextStyle(
-                  fontSize: lyoSmall,
-                  color: Colors.white.withValues(alpha: 0.6),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(
-                    Icons.visibility_outlined,
-                    size: 12,
-                    color: Colors.white.withValues(alpha: 0.5),
+                const Spacer(),
+                Text(
+                  show.title,
+                  style: const TextStyle(
+                    fontSize: lyoBody2,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    height: 1.2,
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _fmt(show.listeners),
-                    style: TextStyle(
-                      fontSize: lyoSmall,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  show.host,
+                  style: TextStyle(
+                    fontSize: lyoSmall,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.visibility_outlined,
+                      size: 12,
                       color: Colors.white.withValues(alpha: 0.5),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 4),
+                    Text(
+                      _fmt(show.listeners),
+                      style: TextStyle(
+                        fontSize: lyoSmall,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -681,47 +727,54 @@ class _EpisodeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: '${episode.title}, ${episode.show}, ${episode.duration}',
+      hint: 'Play this episode',
+      excludeSemantics: true,
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            LyoArtworkTile(
-              size: 52,
-              radius: 10,
-              color1: episode.colors[0],
-              color2: episode.colors[1],
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    episode.title,
-                    style: TextStyle(
-                      fontSize: lyoBody2,
-                      fontWeight: FontWeight.w600,
-                      color: textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${episode.show} · ${episode.duration}',
-                    style: TextStyle(
-                      fontSize: lyoBody2 - 2,
-                      color: textSub,
-                    ),
-                  ),
-                ],
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              LyoArtworkTile(
+                size: 52,
+                radius: 10,
+                color1: episode.colors[0],
+                color2: episode.colors[1],
               ),
-            ),
-            Icon(Icons.more_vert, size: 18, color: textSub),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      episode.title,
+                      style: TextStyle(
+                        fontSize: lyoBody2,
+                        fontWeight: FontWeight.w600,
+                        color: textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${episode.show} · ${episode.duration}',
+                      style: TextStyle(
+                        fontSize: lyoBody2 - 2,
+                        color: textSub,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.more_vert, size: 18, color: textSub),
+            ],
+          ),
         ),
       ),
     );
@@ -751,7 +804,9 @@ class _CategoryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(category.icon, size: 18, color: lyoAccent),
+            ExcludeSemantics(
+              child: Icon(category.icon, size: 18, color: lyoAccent),
+            ),
             Text(
               category.label,
               style: const TextStyle(
@@ -770,7 +825,11 @@ class _CategoryCard extends StatelessWidget {
 // ── Stub body for Browse / Search / Profile tabs ──────────────────────────────
 
 class _StubBody extends StatelessWidget {
-  const _StubBody({required this.label, required this.icon, required this.dark});
+  const _StubBody({
+    required this.label,
+    required this.icon,
+    required this.dark,
+  });
   final String label;
   final IconData icon;
   final bool dark;

@@ -10,7 +10,7 @@ enum UploadTrackStatus { idle, uploading, success, error }
 
 class UploadTrackNotifier extends ChangeNotifier {
   UploadTrackNotifier({TrackService? trackService})
-      : _svc = trackService ?? const TrackService(ApiClient());
+    : _svc = trackService ?? const TrackService(ApiClient());
 
   final TrackService _svc;
 

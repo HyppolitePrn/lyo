@@ -68,10 +68,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
     final success = await context.read<AuthNotifier>().register(
-          _usernameCtrl.text.trim(),
-          _emailCtrl.text.trim(),
-          _passwordCtrl.text,
-        );
+      _usernameCtrl.text.trim(),
+      _emailCtrl.text.trim(),
+      _passwordCtrl.text,
+    );
     if (mounted && success) {
       context.go('/home');
     }
@@ -96,6 +96,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: [
                 const SizedBox(height: lyoGapL),
                 IconButton(
+                  tooltip: 'Back',
                   icon: const Icon(Icons.chevron_left),
                   padding: EdgeInsets.zero,
                   onPressed: () => context.pop(),
@@ -103,12 +104,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: lyoGapXXL),
                 _LogoMark(),
                 const SizedBox(height: lyoGapXL),
-                const Text(
-                  'Create account',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.6,
+                Semantics(
+                  header: true,
+                  child: const Text(
+                    'Create account',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -149,12 +153,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   textInputAction: TextInputAction.next,
                   autofillHints: const [AutofillHints.username],
                   validator: (v) {
-                     if (v == null || v.isEmpty) {
-                       return 'Username is required';
-                     }
-                     if (!_usernameRegex.hasMatch(v)) {
-                       return '3–30 characters, letters, numbers or _';
-                     }
+                    if (v == null || v.isEmpty) {
+                      return 'Username is required';
+                    }
+                    if (!_usernameRegex.hasMatch(v)) {
+                      return '3–30 characters, letters, numbers or _';
+                    }
                     return null;
                   },
                 ),
@@ -285,12 +289,16 @@ class _CreateAccountButton extends StatelessWidget {
         child: ElevatedButton(
           onPressed: (enabled && !isLoading) ? onPressed : null,
           child: isLoading
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
+              ? Semantics(
+                  label: 'Creating your account',
+                  liveRegion: true,
+                  child: const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
                   ),
                 )
               : const Text('Create Account'),
@@ -313,9 +321,12 @@ class _TermsRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Checkbox(
-          value: agreed,
-          onChanged: onChanged,
+        Semantics(
+          label: 'I agree to the Terms of Service and Privacy Policy',
+          child: Checkbox(
+            value: agreed,
+            onChanged: onChanged,
+          ),
         ),
         Expanded(
           child: Padding(
@@ -362,7 +373,9 @@ class _LogoMark extends StatelessWidget {
         color: lyoAccent,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Icon(Icons.radio, size: 20, color: Colors.white),
+      child: const ExcludeSemantics(
+        child: Icon(Icons.radio, size: 20, color: Colors.white),
+      ),
     );
   }
 }

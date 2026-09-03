@@ -14,8 +14,8 @@ class RecordedPlayerNotifier extends ChangeNotifier {
   RecordedPlayerNotifier({
     required LyoAudioHandler audioHandler,
     TrackService? trackService,
-  })  : _audioHandler = audioHandler,
-        _trackSvc = trackService ?? const TrackService(ApiClient()) {
+  }) : _audioHandler = audioHandler,
+       _trackSvc = trackService ?? const TrackService(ApiClient()) {
     _stateSub = _audioHandler.playbackState.listen((s) {
       isPlaying = s.playing;
       notifyListeners();

@@ -73,6 +73,7 @@ class _StreamListScreenState extends State<StreamListScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Refresh the list',
             icon: const Icon(Icons.refresh, color: lyoAccent),
             onPressed: _load,
           ),
@@ -93,41 +94,52 @@ class _StreamListScreenState extends State<StreamListScreen> {
     final textSub = dark ? lyoSubDark : lyoSubLight;
 
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: lyoAccent),
+      return Center(
+        child: Semantics(
+          label: 'Loading live streams',
+          liveRegion: true,
+          child: const CircularProgressIndicator(color: lyoAccent),
+        ),
       );
     }
     if (_error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(lyoGapL),
-          child: Text(
-            _error!,
-            style: const TextStyle(color: lyoError),
-            textAlign: TextAlign.center,
+          child: Semantics(
+            liveRegion: true,
+            child: Text(
+              _error!,
+              style: const TextStyle(color: lyoError),
+              textAlign: TextAlign.center,
+            ),
           ),
         ),
       );
     }
     if (_streams.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.radio,
-              size: 64,
-              color: lyoAccent.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: lyoGapM),
-            Text(
-              'No live streams right now.',
-              style: TextStyle(
-                color: lyoAccent.withValues(alpha: 0.7),
-                fontSize: lyoBody1,
+        child: Semantics(
+          label: 'No live streams right now.',
+          excludeSemantics: true,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.radio,
+                size: 64,
+                color: lyoAccent.withValues(alpha: 0.4),
               ),
-            ),
-          ],
+              const SizedBox(height: lyoGapM),
+              Text(
+                'No live streams right now.',
+                style: TextStyle(
+                  color: lyoAccent.withValues(alpha: 0.7),
+                  fontSize: lyoBody1,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -160,8 +172,12 @@ class _StreamTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final favoritesEnabled = context.watch<FeatureFlags>().isEnabled('favorites');
-    final favorites = favoritesEnabled ? context.watch<FavoritesNotifier>() : null;
+    final favoritesEnabled = context.watch<FeatureFlags>().isEnabled(
+      'favorites',
+    );
+    final favorites = favoritesEnabled
+        ? context.watch<FavoritesNotifier>()
+        : null;
 
     return GestureDetector(
       onTap: () => context.push('/player/${stream.id}'),
@@ -183,27 +199,36 @@ class _StreamTile extends StatelessWidget {
             ),
             const SizedBox(width: lyoGapM),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    stream.title,
-                    style: TextStyle(
-                      color: textPrimary,
-                      fontSize: lyoBody1,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (stream.description != null) ...[
-                    const SizedBox(height: 2),
+              child: Semantics(
+                button: true,
+                label: stream.description?.isNotEmpty == true
+                    ? 'Live: ${stream.title}, ${stream.description}'
+                    : 'Live: ${stream.title}',
+                hint: 'Open this live stream',
+                excludeSemantics: true,
+                onTap: () => context.push('/player/${stream.id}'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      stream.description!,
-                      style: TextStyle(color: textSub, fontSize: lyoCaption),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      stream.title,
+                      style: TextStyle(
+                        color: textPrimary,
+                        fontSize: lyoBody1,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                    if (stream.description != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        stream.description!,
+                        style: TextStyle(color: textSub, fontSize: lyoCaption),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
             if (favorites != null)
@@ -216,7 +241,9 @@ class _StreamTile extends StatelessWidget {
                   }
                 },
               ),
-            Icon(Icons.chevron_right, color: textSub),
+            ExcludeSemantics(
+              child: Icon(Icons.chevron_right, color: textSub),
+            ),
           ],
         ),
       ),

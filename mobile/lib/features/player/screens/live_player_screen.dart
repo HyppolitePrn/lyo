@@ -31,7 +31,11 @@ class LivePlayerScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.radio, size: 64, color: lyoAccent.withValues(alpha: 0.4)),
+            Icon(
+              Icons.radio,
+              size: 64,
+              color: lyoAccent.withValues(alpha: 0.4),
+            ),
             const SizedBox(height: lyoGapM),
             Text(
               'Live Player — coming soon',

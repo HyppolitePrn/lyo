@@ -79,7 +79,9 @@ class TrackService {
         .timeout(const Duration(minutes: 5));
     if (putResponse.statusCode >= 400) {
       throw ApiException(
-          putResponse.statusCode, 'Upload failed (${putResponse.statusCode})');
+        putResponse.statusCode,
+        'Upload failed (${putResponse.statusCode})',
+      );
     }
 
     return createTrack(

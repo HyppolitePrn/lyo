@@ -54,7 +54,9 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                   const Text(
                     'New playlist',
                     style: TextStyle(
-                        fontSize: lyoH2, fontWeight: FontWeight.w700),
+                      fontSize: lyoH2,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: lyoGapL),
                   TextField(
@@ -65,8 +67,9 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                   const SizedBox(height: lyoGapM),
                   TextField(
                     controller: descController,
-                    decoration:
-                        const InputDecoration(labelText: 'Description (optional)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Description (optional)',
+                    ),
                   ),
                   const SizedBox(height: lyoGapM),
                   SwitchListTile(
@@ -98,12 +101,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       return;
     }
     await context.read<PlaylistNotifier>().create(
-          title: titleController.text.trim(),
-          token: token,
-          description:
-              descController.text.trim().isEmpty ? null : descController.text.trim(),
-          isPublic: isPublic,
-        );
+      title: titleController.text.trim(),
+      token: token,
+      description: descController.text.trim().isEmpty
+          ? null
+          : descController.text.trim(),
+      isPublic: isPublic,
+    );
   }
 
   @override
@@ -120,41 +124,73 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       appBar: AppBar(
         backgroundColor: bg,
         elevation: 0,
-        title: Text('My Playlists',
-            style: TextStyle(
-                color: textPrimary, fontSize: lyoH1, fontWeight: FontWeight.w700)),
+        title: Text(
+          'My Playlists',
+          style: TextStyle(
+            color: textPrimary,
+            fontSize: lyoH1,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         actions: [
           IconButton(
+            tooltip: 'Create a playlist',
             icon: const Icon(Icons.add, color: lyoAccent),
             onPressed: _createPlaylist,
           ),
         ],
       ),
       body: switch (notifier.status) {
-        PlaylistStatus.loading || PlaylistStatus.idle =>
-          const Center(child: CircularProgressIndicator(color: lyoAccent)),
+        PlaylistStatus.loading || PlaylistStatus.idle => Center(
+          child: Semantics(
+            label: 'Loading playlists',
+            liveRegion: true,
+            child: const CircularProgressIndicator(color: lyoAccent),
+          ),
+        ),
         PlaylistStatus.error => Center(
-            child: Text(notifier.error ?? 'Something went wrong',
-                style: const TextStyle(color: lyoError))),
+          child: Semantics(
+            liveRegion: true,
+            child: Text(
+              notifier.error ?? 'Something went wrong',
+              style: const TextStyle(color: lyoError),
+            ),
+          ),
+        ),
         PlaylistStatus.ready when notifier.playlists.isEmpty => Center(
+          child: Semantics(
+            label: 'No playlists yet',
+            excludeSemantics: true,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.queue_music_outlined,
-                    size: 48, color: lyoAccent.withValues(alpha: 0.4)),
+                Icon(
+                  Icons.queue_music_outlined,
+                  size: 48,
+                  color: lyoAccent.withValues(alpha: 0.4),
+                ),
                 const SizedBox(height: lyoGapM),
-                Text('No playlists yet',
-                    style: TextStyle(color: textSub, fontSize: lyoBody1)),
+                Text(
+                  'No playlists yet',
+                  style: TextStyle(color: textSub, fontSize: lyoBody1),
+                ),
               ],
             ),
           ),
+        ),
         PlaylistStatus.ready => ListView.separated(
-            padding: const EdgeInsets.all(lyoGapM),
-            itemCount: notifier.playlists.length,
-            separatorBuilder: (_, _) => const SizedBox(height: lyoGapS),
-            itemBuilder: (context, i) {
-              final Playlist p = notifier.playlists[i];
-              return GestureDetector(
+          padding: const EdgeInsets.all(lyoGapM),
+          itemCount: notifier.playlists.length,
+          separatorBuilder: (_, _) => const SizedBox(height: lyoGapS),
+          itemBuilder: (context, i) {
+            final Playlist p = notifier.playlists[i];
+            return Semantics(
+              button: true,
+              label: '${p.title}, ${p.trackIds.length} tracks',
+              hint: 'Open this playlist',
+              excludeSemantics: true,
+              onTap: () => context.push('/playlists/${p.id}'),
+              child: GestureDetector(
                 onTap: () => context.push('/playlists/${p.id}'),
                 child: Container(
                   padding: const EdgeInsets.all(lyoGapM),
@@ -170,14 +206,22 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(p.title,
-                                style: TextStyle(
-                                    color: textPrimary,
-                                    fontSize: lyoBody1,
-                                    fontWeight: FontWeight.w600)),
+                            Text(
+                              p.title,
+                              style: TextStyle(
+                                color: textPrimary,
+                                fontSize: lyoBody1,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             const SizedBox(height: 2),
-                            Text('${p.trackIds.length} tracks',
-                                style: TextStyle(color: textSub, fontSize: lyoCaption)),
+                            Text(
+                              '${p.trackIds.length} tracks',
+                              style: TextStyle(
+                                color: textSub,
+                                fontSize: lyoCaption,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -185,9 +229,10 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                     ],
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
+        ),
       },
     );
   }

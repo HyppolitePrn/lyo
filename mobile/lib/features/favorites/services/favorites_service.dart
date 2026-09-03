@@ -53,8 +53,8 @@ class FavoritesService {
   Future<void> unfavoriteStream(String streamId, String token) =>
       _api.delete('/users/me/favorites/streams/$streamId', token: token);
 
-  Future<void> favoritePlaylist(String playlistId, String token) => _api
-      .postEmpty('/users/me/favorites/playlists/$playlistId', token: token);
+  Future<void> favoritePlaylist(String playlistId, String token) =>
+      _api.postEmpty('/users/me/favorites/playlists/$playlistId', token: token);
 
   Future<void> unfavoritePlaylist(String playlistId, String token) =>
       _api.delete('/users/me/favorites/playlists/$playlistId', token: token);

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
@@ -21,6 +22,13 @@ import 'features/track/providers/upload_track_notifier.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Lyo is portrait-only: every screen (player, broadcaster, lists) is laid out
+  // as a single column, and landscape would only stretch it.
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
 
   // Android 13+ hides the playback notification without this — the service
   // still plays in the background either way, this only affects visibility.

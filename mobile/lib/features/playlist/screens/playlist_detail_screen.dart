@@ -34,10 +34,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       return;
     }
     await context.read<PlaylistNotifier>().removeTrack(
-          playlistId: widget.playlistId,
-          trackId: trackId,
-          token: token,
-        );
+      playlistId: widget.playlistId,
+      trackId: trackId,
+      token: token,
+    );
   }
 
   Future<void> _deletePlaylist() async {
@@ -52,20 +52,23 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         content: const Text('This cannot be undone.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Delete')),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
     if (confirmed != true || !mounted) {
       return;
     }
-    final ok = await context
-        .read<PlaylistNotifier>()
-        .delete(widget.playlistId, token);
+    final ok = await context.read<PlaylistNotifier>().delete(
+      widget.playlistId,
+      token,
+    );
     if (ok && mounted) {
       context.pop();
     }
@@ -85,29 +88,46 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       appBar: AppBar(
         backgroundColor: bg,
         elevation: 0,
-        title: Text(playlist?.title ?? 'Playlist',
-            style: TextStyle(
-                color: textPrimary, fontSize: lyoH1, fontWeight: FontWeight.w700)),
+        title: Text(
+          playlist?.title ?? 'Playlist',
+          style: TextStyle(
+            color: textPrimary,
+            fontSize: lyoH1,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         actions: [
           if (playlist != null)
             IconButton(
+              tooltip: 'Delete this playlist',
               icon: const Icon(Icons.delete_outline, color: lyoError),
               onPressed: _deletePlaylist,
             ),
         ],
       ),
       body: switch (notifier.status) {
-        PlaylistStatus.loading || PlaylistStatus.idle =>
-          const Center(child: CircularProgressIndicator(color: lyoAccent)),
-        PlaylistStatus.error => Center(
-            child: Text(notifier.error ?? 'Something went wrong',
-                style: const TextStyle(color: lyoError))),
-        PlaylistStatus.ready => _Body(
-            playlist: playlist,
-            textSub: textSub,
-            textPrimary: textPrimary,
-            onRemoveTrack: _removeTrack,
+        PlaylistStatus.loading || PlaylistStatus.idle => Center(
+          child: Semantics(
+            label: 'Loading playlist',
+            liveRegion: true,
+            child: const CircularProgressIndicator(color: lyoAccent),
           ),
+        ),
+        PlaylistStatus.error => Center(
+          child: Semantics(
+            liveRegion: true,
+            child: Text(
+              notifier.error ?? 'Something went wrong',
+              style: const TextStyle(color: lyoError),
+            ),
+          ),
+        ),
+        PlaylistStatus.ready => _Body(
+          playlist: playlist,
+          textSub: textSub,
+          textPrimary: textPrimary,
+          onRemoveTrack: _removeTrack,
+        ),
       },
     );
   }
@@ -131,15 +151,24 @@ class _Body extends StatelessWidget {
     final tracks = playlist?.tracks ?? const <Track>[];
     if (tracks.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.music_off_outlined,
-                size: 48, color: lyoAccent.withValues(alpha: 0.4)),
-            const SizedBox(height: lyoGapM),
-            Text('No tracks in this playlist yet',
-                style: TextStyle(color: textSub, fontSize: lyoBody1)),
-          ],
+        child: Semantics(
+          label: 'No tracks in this playlist yet',
+          excludeSemantics: true,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.music_off_outlined,
+                size: 48,
+                color: lyoAccent.withValues(alpha: 0.4),
+              ),
+              const SizedBox(height: lyoGapM),
+              Text(
+                'No tracks in this playlist yet',
+                style: TextStyle(color: textSub, fontSize: lyoBody1),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -155,27 +184,49 @@ class _Body extends StatelessWidget {
           child: Row(
             children: [
               LyoArtworkTile(
-                  size: 48, radius: 10, color1: colors[0], color2: colors[1]),
+                size: 48,
+                radius: 10,
+                color1: colors[0],
+                color2: colors[1],
+              ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(t.title,
+                child: Semantics(
+                  label: t.artist?.isNotEmpty == true
+                      ? '${t.title}, ${t.artist}'
+                      : t.title,
+                  excludeSemantics: true,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t.title,
                         style: TextStyle(
-                            fontSize: lyoBody2,
-                            fontWeight: FontWeight.w600,
-                            color: textPrimary),
+                          fontSize: lyoBody2,
+                          fontWeight: FontWeight.w600,
+                          color: textPrimary,
+                        ),
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    if (t.artist?.isNotEmpty == true)
-                      Text(t.artist!,
-                          style: TextStyle(fontSize: lyoBody2 - 2, color: textSub)),
-                  ],
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (t.artist?.isNotEmpty == true)
+                        Text(
+                          t.artist!,
+                          style: TextStyle(
+                            fontSize: lyoBody2 - 2,
+                            color: textSub,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.remove_circle_outline, color: lyoSubDark),
+                tooltip: 'Remove ${t.title} from this playlist',
+                icon: const Icon(
+                  Icons.remove_circle_outline,
+                  color: lyoSubDark,
+                ),
                 onPressed: () => onRemoveTrack(t.id),
               ),
             ],

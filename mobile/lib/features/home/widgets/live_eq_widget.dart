@@ -54,8 +54,7 @@ class _LiveEQWidgetState extends State<LiveEQWidget>
     _timer = Timer.periodic(const Duration(milliseconds: 160), (_) {
       if (mounted) {
         setState(() {
-          _heights =
-              List.generate(4, (_) => 0.2 + _rng.nextDouble() * 0.8);
+          _heights = List.generate(4, (_) => 0.2 + _rng.nextDouble() * 0.8);
         });
       }
     });
@@ -75,26 +74,30 @@ class _LiveEQWidgetState extends State<LiveEQWidget>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 20,
-      height: 14,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: _heights
-            .map(
-              (h) => AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                curve: Curves.easeInOut,
-                width: 3,
-                height: h * 14,
-                decoration: BoxDecoration(
-                  color: lyoAccent,
-                  borderRadius: BorderRadius.circular(1.5),
+    // Decorative only — the "LIVE" badge next to it already conveys the state,
+    // so keep this animation out of the accessibility tree.
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: 20,
+        height: 14,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: _heights
+              .map(
+                (h) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeInOut,
+                  width: 3,
+                  height: h * 14,
+                  decoration: BoxDecoration(
+                    color: lyoAccent,
+                    borderRadius: BorderRadius.circular(1.5),
+                  ),
                 ),
-              ),
-            )
-            .toList(),
+              )
+              .toList(),
+        ),
       ),
     );
   }

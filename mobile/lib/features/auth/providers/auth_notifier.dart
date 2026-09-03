@@ -22,7 +22,8 @@ String? _jwtRole(String token) {
       payload += '=';
     }
     final decoded =
-        jsonDecode(utf8.decode(base64Url.decode(payload))) as Map<String, dynamic>;
+        jsonDecode(utf8.decode(base64Url.decode(payload)))
+            as Map<String, dynamic>;
     return decoded['role'] as String?;
   } catch (_) {
     return null;
@@ -31,8 +32,8 @@ String? _jwtRole(String token) {
 
 class AuthNotifier extends ChangeNotifier {
   AuthNotifier({ApiClient apiClient = const ApiClient()})
-      : _svc = AuthService(apiClient),
-        _userSvc = UserService(apiClient);
+    : _svc = AuthService(apiClient),
+      _userSvc = UserService(apiClient);
 
   final AuthService _svc;
   final UserService _userSvc;

@@ -9,24 +9,32 @@ class AuthErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0x1AE05A5A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: lyoError.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, color: lyoError, size: 18),
-          const SizedBox(width: lyoGapS),
-          Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(color: lyoError, fontSize: lyoBody2),
+    // liveRegion: the banner appears after a failed submit, so screen readers
+    // must announce it without the user hunting for it.
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      label: 'Error: $message',
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0x1AE05A5A),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: lyoError.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: lyoError, size: 18),
+            const SizedBox(width: lyoGapS),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: lyoError, fontSize: lyoBody2),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

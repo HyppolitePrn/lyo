@@ -54,8 +54,13 @@ class _SignedOutBody extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.person_outline,
-                  size: 48, color: lyoAccent.withValues(alpha: 0.4)),
+              ExcludeSemantics(
+                child: Icon(
+                  Icons.person_outline,
+                  size: 48,
+                  color: lyoAccent.withValues(alpha: 0.4),
+                ),
+              ),
               const SizedBox(height: lyoGapM),
               Text(
                 'Connecte-toi pour voir ton profil',
@@ -97,43 +102,53 @@ class _ProfileBody extends StatelessWidget {
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(
-            lyoPadHMain, lyoGapXL, lyoPadHMain, lyoGapXXL),
+          lyoPadHMain,
+          lyoGapXL,
+          lyoPadHMain,
+          lyoGapXXL,
+        ),
         children: [
           Center(
-            child: Column(
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    color: lyoAccent,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    initialsFrom(auth.username),
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+            child: Semantics(
+              label:
+                  '${auth.username ?? 'Unknown user'}, '
+                  '${auth.email ?? 'no email'}',
+              excludeSemantics: true,
+              child: Column(
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      color: lyoAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      initialsFrom(auth.username),
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: lyoGapM),
-                Text(
-                  auth.username ?? '—',
-                  style: TextStyle(
-                    fontSize: lyoH2,
-                    fontWeight: FontWeight.w700,
-                    color: textPrimary,
+                  const SizedBox(height: lyoGapM),
+                  Text(
+                    auth.username ?? '—',
+                    style: TextStyle(
+                      fontSize: lyoH2,
+                      fontWeight: FontWeight.w700,
+                      color: textPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: lyoGapXS),
-                Text(
-                  auth.email ?? '—',
-                  style: TextStyle(fontSize: lyoBody2, color: textSub),
-                ),
-              ],
+                  const SizedBox(height: lyoGapXS),
+                  Text(
+                    auth.email ?? '—',
+                    style: TextStyle(fontSize: lyoBody2, color: textSub),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: lyoGapXXL),
@@ -198,25 +213,36 @@ class _NavTile extends StatelessWidget {
     final textSub = dark ? lyoSubDark : lyoSubLight;
     final border = dark ? lyoBorderDark : lyoBorderLight;
 
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(lyoGapL),
-        decoration: BoxDecoration(
-          color: surface,
-          borderRadius: BorderRadius.circular(lyoRadiusCard),
-          border: Border.all(color: border),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: lyoAccent),
-            const SizedBox(width: lyoGapM),
-            Text(label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(lyoGapL),
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: BorderRadius.circular(lyoRadiusCard),
+            border: Border.all(color: border),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: lyoAccent),
+              const SizedBox(width: lyoGapM),
+              Text(
+                label,
                 style: TextStyle(
-                    color: textPrimary, fontWeight: FontWeight.w600, fontSize: lyoBody2)),
-            const Spacer(),
-            Icon(Icons.chevron_right, color: textSub),
-          ],
+                  color: textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: lyoBody2,
+                ),
+              ),
+              const Spacer(),
+              Icon(Icons.chevron_right, color: textSub),
+            ],
+          ),
         ),
       ),
     );
@@ -243,28 +269,35 @@ class _InfoTile extends StatelessWidget {
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
     final border = dark ? lyoBorderDark : lyoBorderLight;
 
-    return Container(
-      padding: const EdgeInsets.all(lyoGapL),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(lyoRadiusCard),
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: textSub),
-          const SizedBox(width: lyoGapM),
-          Text(label, style: TextStyle(color: textSub, fontSize: lyoBody2)),
-          const Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              color: textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: lyoBody2,
+    return Semantics(
+      label: '$label : $value',
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.all(lyoGapL),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(lyoRadiusCard),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: textSub),
+            const SizedBox(width: lyoGapM),
+            Text(
+              label,
+              style: TextStyle(color: textSub, fontSize: lyoBody2),
             ),
-          ),
-        ],
+            const Spacer(),
+            Text(
+              value,
+              style: TextStyle(
+                color: textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: lyoBody2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

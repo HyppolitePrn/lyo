@@ -8,7 +8,7 @@ enum PlaylistStatus { idle, loading, ready, error }
 
 class PlaylistNotifier extends ChangeNotifier {
   PlaylistNotifier({PlaylistService? playlistService})
-      : _svc = playlistService ?? const PlaylistService(ApiClient());
+    : _svc = playlistService ?? const PlaylistService(ApiClient());
 
   final PlaylistService _svc;
 
@@ -109,7 +109,10 @@ class PlaylistNotifier extends ChangeNotifier {
   }) async {
     try {
       final p = await _svc.addTrack(
-          playlistId: playlistId, trackId: trackId, token: token);
+        playlistId: playlistId,
+        trackId: trackId,
+        token: token,
+      );
       _replace(p);
       return true;
     } on ApiException catch (e) {
@@ -130,7 +133,10 @@ class PlaylistNotifier extends ChangeNotifier {
   }) async {
     try {
       final p = await _svc.removeTrack(
-          playlistId: playlistId, trackId: trackId, token: token);
+        playlistId: playlistId,
+        trackId: trackId,
+        token: token,
+      );
       _replace(p);
       return true;
     } on ApiException catch (e) {
