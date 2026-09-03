@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -285,5 +286,45 @@ func TestSupervisionSummary_SurvivesPrometheusBeingDown(t *testing.T) {
 	}
 	if body.MetricsAvailable {
 		t.Error("metrics_available must be false when every query failed")
+	}
+}
+
+// TestSupervision_ExpiredTokenIs401NotForbidden is the difference between a
+// message an admin can act on and one that tells them, wrongly, that they are
+// not an administrator. The auth middleware is permissive by design (ADR 007),
+// so an expired token arrives looking exactly like an anonymous caller.
+func TestSupervision_ExpiredTokenIs401NotForbidden(t *testing.T) {
+	routes := []struct{ method, path, body string }{
+		{http.MethodGet, "/admin/supervision", ""},
+		{http.MethodGet, "/admin/incidents", ""},
+		{http.MethodPatch, "/admin/incidents/" + sampleIncidentID, `{"action":"acknowledge"}`},
+	}
+
+	for _, route := range routes {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			f := newFixture(t)
+			rec := f.do(t, route.method, route.path, "not.a.valid.jwt", route.body)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), "sign in again") {
+				t.Errorf("body = %q, should tell the caller to sign in again", rec.Body.String())
+			}
+		})
+	}
+}
+
+// A caller who is authenticated but below admin gets 403, and a message that
+// says so — they are not going to fix it by signing in again.
+func TestSupervision_AuthenticatedNonAdminIsToldItIsTheRole(t *testing.T) {
+	f := newFixture(t)
+	rec := f.do(t, http.MethodGet, "/admin/supervision", f.token(t, "u-1", auth.RoleUser), "")
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "administrator access required") {
+		t.Errorf("body = %q, should name the missing role", rec.Body.String())
 	}
 }

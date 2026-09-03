@@ -21,11 +21,17 @@ class SupervisionNotifier extends ChangeNotifier {
   /// disable that one row's buttons rather than the whole list.
   String? pendingIncidentId;
 
+  /// True when the API answered 401: the access token expired. That is a
+  /// session to renew, not a permission the account lacks, and the screen says
+  /// so rather than showing a bare "forbidden".
+  bool sessionExpired = false;
+
   /// Loads the summary and the feed together: an admin opening this screen
   /// wants both, and issuing them in parallel halves the wait.
   Future<void> load(String token) async {
     status = SupervisionStatus.loading;
     error = null;
+    sessionExpired = false;
     notifyListeners();
 
     try {
@@ -38,7 +44,14 @@ class SupervisionNotifier extends ChangeNotifier {
       status = SupervisionStatus.ready;
     } on ApiException catch (e) {
       status = SupervisionStatus.error;
+      sessionExpired = e.statusCode == 401;
       error = e.message;
+      // A stale summary next to a "your session ended" banner reads as live
+      // data. Drop it: showing nothing is honest, showing old numbers is not.
+      if (sessionExpired) {
+        summary = null;
+        incidents = [];
+      }
     } catch (_) {
       status = SupervisionStatus.error;
       error = 'Could not load supervision data.';
@@ -72,6 +85,7 @@ class SupervisionNotifier extends ChangeNotifier {
       summary = await _svc.getSummary(token);
       return true;
     } on ApiException catch (e) {
+      sessionExpired = e.statusCode == 401;
       error = e.message;
       return false;
     } catch (_) {

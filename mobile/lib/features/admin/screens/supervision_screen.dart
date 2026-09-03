@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/features/feature_flags_provider.dart';
@@ -130,7 +131,9 @@ class _Body extends StatelessWidget {
         lyoGapXXL,
       ),
       children: [
-        if (notifier.status == SupervisionStatus.error)
+        if (notifier.sessionExpired)
+          const _SessionExpired()
+        else if (notifier.status == SupervisionStatus.error)
           _ErrorBanner(message: notifier.error ?? 'Something went wrong.'),
         if (summary != null) ...[
           _MetricsGrid(summary: summary, dark: dark),
@@ -166,6 +169,52 @@ class _Body extends StatelessWidget {
             const SizedBox(height: lyoGapM),
           ],
       ],
+    );
+  }
+}
+
+/// An expired access token reaches the API looking like an anonymous caller,
+/// so the useful thing to show is the way out, not the status code.
+class _SessionExpired extends StatelessWidget {
+  const _SessionExpired();
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(bottom: lyoGapL),
+      padding: const EdgeInsets.all(lyoGapL),
+      decoration: BoxDecoration(
+        color: dark ? lyoSurfaceDark : lyoSurfaceLight,
+        borderRadius: BorderRadius.circular(lyoRadiusCard),
+        border: Border.all(color: dark ? lyoBorderDark : lyoBorderLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Your session has expired',
+            style: TextStyle(
+              color: dark ? lyoTextDark : lyoTextLight,
+              fontSize: lyoBody1,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: lyoGapXS),
+          Text(
+            'Sign in again to see platform health.',
+            style: TextStyle(
+              color: dark ? lyoSubDark : lyoSubLight,
+              fontSize: lyoBody2,
+            ),
+          ),
+          const SizedBox(height: lyoGapM),
+          ElevatedButton(
+            onPressed: () => context.go('/login'),
+            child: const Text('Sign in'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -217,8 +266,9 @@ class _MetricsGrid extends StatelessWidget {
           border: Border.all(color: dark ? lyoBorderDark : lyoBorderLight),
         ),
         child: Text(
-          'Live metrics unavailable — Prometheus is unreachable. '
-          'Incident counts below are still accurate.',
+          'Live metrics unavailable — Prometheus is not configured or not '
+          'responding (check PROMETHEUS_URL). Incident counts below are still '
+          'accurate: they come from the platform database.',
           style: TextStyle(color: textSub, fontSize: lyoBody2),
         ),
       );

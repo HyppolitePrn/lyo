@@ -152,3 +152,75 @@ func TestRequireRole(t *testing.T) {
 		})
 	}
 }
+
+// TestAuthenticate_RecordsRejectedToken: the middleware stays permissive — it
+// never rejects — but a handler must still be able to tell a caller who never
+// logged in from one whose session ran out.
+func TestAuthenticate_RecordsRejectedToken(t *testing.T) {
+	svc := auth.NewService("test-jwt-secret-at-least-32-chars!", time.Minute, time.Hour)
+
+	tests := map[string]struct {
+		header       string
+		wantRejected bool
+		wantClaims   bool
+	}{
+		"no header":     {"", false, false},
+		"invalid token": {"Bearer not.a.valid.jwt", true, false},
+		"non-bearer":    {"Basic abc123", false, false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var gotRejected, gotClaims bool
+			h := middleware.Authenticate(svc)(http.HandlerFunc(
+				func(_ http.ResponseWriter, r *http.Request) {
+					gotRejected = middleware.TokenRejected(r.Context())
+					_, gotClaims = middleware.ClaimsFromContext(r.Context())
+				}))
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+			if tc.header != "" {
+				req.Header.Set("Authorization", tc.header)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			// Permissive in every case: the request always reaches the handler.
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, the middleware must never reject", rec.Code)
+			}
+			if gotRejected != tc.wantRejected {
+				t.Errorf("TokenRejected = %v, want %v", gotRejected, tc.wantRejected)
+			}
+			if gotClaims != tc.wantClaims {
+				t.Errorf("claims present = %v, want %v", gotClaims, tc.wantClaims)
+			}
+		})
+	}
+}
+
+func TestAuthenticate_ValidTokenIsNotMarkedRejected(t *testing.T) {
+	svc := auth.NewService("test-jwt-secret-at-least-32-chars!", time.Minute, time.Hour)
+	pair, err := svc.Issue("user-1", auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var rejected, hasClaims bool
+	h := middleware.Authenticate(svc)(http.HandlerFunc(
+		func(_ http.ResponseWriter, r *http.Request) {
+			rejected = middleware.TokenRejected(r.Context())
+			_, hasClaims = middleware.ClaimsFromContext(r.Context())
+		}))
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+pair.AccessToken)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if rejected {
+		t.Error("a valid token must not be marked rejected")
+	}
+	if !hasClaims {
+		t.Error("expected claims in the context")
+	}
+}

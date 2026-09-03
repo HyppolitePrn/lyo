@@ -18,6 +18,14 @@ import (
 // supervisionFlag gates the whole admin supervision surface.
 const supervisionFlag = "admin_supervision"
 
+// Messages a client can act on: one means "log in again", the other means
+// "this account will never be allowed in". A single "forbidden" for both is
+// what makes an expired session look like a permissions bug.
+const (
+	sessionExpiredMsg = "session expired, sign in again"
+	notAdminMsg       = "administrator access required"
+)
+
 // IncidentService is the subset of incident.Service consumed by the handlers.
 type IncidentService interface {
 	List(ctx context.Context, status incident.Status, limit int) ([]incident.Incident, error)
@@ -33,12 +41,31 @@ type MetricsQuerier interface {
 	ScalarQuery(ctx context.Context, query string) (float64, bool, error)
 }
 
-// requireAdmin is the single gate for every supervision endpoint. Incidents
+// adminGate is the single gate for every supervision endpoint. Incidents
 // expose the shape of the platform's failures, so nothing here is readable
 // below the admin role.
-func requireAdmin(ctx context.Context) bool {
+type adminGate int
+
+const (
+	// adminOK — the caller is an authenticated admin.
+	adminOK adminGate = iota
+	// adminExpired — a token was presented and rejected. Almost always an
+	// expired access token, which is a session to renew, not a permission the
+	// caller lacks. Answering 403 here tells an admin they are not an admin.
+	adminExpired
+	// adminForbidden — anonymous, or authenticated below the admin role.
+	adminForbidden
+)
+
+func checkAdmin(ctx context.Context) adminGate {
 	claims, ok := middleware.ClaimsFromContext(ctx)
-	return ok && claims.Role.AtLeast(auth.RoleAdmin)
+	if ok && claims.Role.AtLeast(auth.RoleAdmin) {
+		return adminOK
+	}
+	if !ok && middleware.TokenRejected(ctx) {
+		return adminExpired
+	}
+	return adminForbidden
 }
 
 func incidentToAPI(in *incident.Incident) (Incident, error) {
@@ -75,10 +102,16 @@ func incidentToAPI(in *incident.Incident) (Incident, error) {
 }
 
 func (h *Handlers) ListIncidents(ctx context.Context, req ListIncidentsRequestObject) (ListIncidentsResponseObject, error) {
-	if !requireAdmin(ctx) {
-		return ListIncidents403JSONResponse{
-			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: "forbidden"},
+	switch checkAdmin(ctx) {
+	case adminExpired:
+		return ListIncidents401JSONResponse{
+			UnauthorizedJSONResponse: UnauthorizedJSONResponse{Code: 401, Message: sessionExpiredMsg},
 		}, nil
+	case adminForbidden:
+		return ListIncidents403JSONResponse{
+			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: notAdminMsg},
+		}, nil
+	case adminOK:
 	}
 	if !h.featureSvc.IsEnabled(ctx, supervisionFlag) {
 		return ListIncidents503JSONResponse{
@@ -119,12 +152,19 @@ func (h *Handlers) ListIncidents(ctx context.Context, req ListIncidentsRequestOb
 }
 
 func (h *Handlers) UpdateIncident(ctx context.Context, req UpdateIncidentRequestObject) (UpdateIncidentResponseObject, error) {
-	claims, ok := middleware.ClaimsFromContext(ctx)
-	if !ok || !claims.Role.AtLeast(auth.RoleAdmin) {
-		return UpdateIncident403JSONResponse{
-			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: "forbidden"},
+	switch checkAdmin(ctx) {
+	case adminExpired:
+		return UpdateIncident401JSONResponse{
+			UnauthorizedJSONResponse: UnauthorizedJSONResponse{Code: 401, Message: sessionExpiredMsg},
 		}, nil
+	case adminForbidden:
+		return UpdateIncident403JSONResponse{
+			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: notAdminMsg},
+		}, nil
+	case adminOK:
 	}
+	// Safe after adminOK: the gate only returns it when claims are present.
+	claims, _ := middleware.ClaimsFromContext(ctx)
 	if !h.featureSvc.IsEnabled(ctx, supervisionFlag) {
 		return UpdateIncident503JSONResponse{
 			ServiceUnavailableJSONResponse: ServiceUnavailableJSONResponse{Code: 503, Message: "feature disabled"},
@@ -230,10 +270,16 @@ func float32Ptr(v float64) *float32 {
 }
 
 func (h *Handlers) GetSupervisionSummary(ctx context.Context, _ GetSupervisionSummaryRequestObject) (GetSupervisionSummaryResponseObject, error) {
-	if !requireAdmin(ctx) {
-		return GetSupervisionSummary403JSONResponse{
-			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: "forbidden"},
+	switch checkAdmin(ctx) {
+	case adminExpired:
+		return GetSupervisionSummary401JSONResponse{
+			UnauthorizedJSONResponse: UnauthorizedJSONResponse{Code: 401, Message: sessionExpiredMsg},
 		}, nil
+	case adminForbidden:
+		return GetSupervisionSummary403JSONResponse{
+			ForbiddenJSONResponse: ForbiddenJSONResponse{Code: 403, Message: notAdminMsg},
+		}, nil
+	case adminOK:
 	}
 	if !h.featureSvc.IsEnabled(ctx, supervisionFlag) {
 		return GetSupervisionSummary503JSONResponse{

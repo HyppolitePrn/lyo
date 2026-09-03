@@ -166,4 +166,75 @@ void main() {
       expect(parsed.status, IncidentStatus.firing);
     });
   });
+
+  // A 401 means the access token expired — a session to renew, not a
+  // permission the account lacks. Conflating the two is what showed an
+  // administrator a red "forbidden" on their own supervision screen.
+  group('session expiry', () {
+    test('a 401 is flagged as an expired session', () async {
+      when(
+        () => svc.getSummary(any()),
+      ).thenThrow(const ApiException(401, 'session expired, sign in again'));
+      when(
+        () => svc.listIncidents(token: any(named: 'token')),
+      ).thenAnswer((_) async => []);
+
+      await notifier.load('tok');
+
+      expect(notifier.sessionExpired, isTrue);
+      expect(notifier.status, SupervisionStatus.error);
+    });
+
+    test('a 403 is not an expired session', () async {
+      when(
+        () => svc.getSummary(any()),
+      ).thenThrow(const ApiException(403, 'administrator access required'));
+      when(
+        () => svc.listIncidents(token: any(named: 'token')),
+      ).thenAnswer((_) async => []);
+
+      await notifier.load('tok');
+
+      expect(notifier.sessionExpired, isFalse);
+      expect(notifier.error, 'administrator access required');
+    });
+
+    test(
+      'an expired session drops the stale data it can no longer vouch for',
+      () async {
+        when(() => svc.getSummary(any())).thenAnswer((_) async => summary());
+        when(
+          () => svc.listIncidents(token: any(named: 'token')),
+        ).thenAnswer((_) async => [incident()]);
+        await notifier.load('tok');
+        expect(notifier.summary, isNotNull);
+
+        when(
+          () => svc.getSummary(any()),
+        ).thenThrow(const ApiException(401, 'session expired, sign in again'));
+        await notifier.load('tok');
+
+        // Old numbers under a "session ended" banner would read as live data.
+        expect(notifier.summary, isNull);
+        expect(notifier.incidents, isEmpty);
+      },
+    );
+
+    test('a successful load clears a previous expiry', () async {
+      when(
+        () => svc.getSummary(any()),
+      ).thenThrow(const ApiException(401, 'expired'));
+      when(
+        () => svc.listIncidents(token: any(named: 'token')),
+      ).thenAnswer((_) async => []);
+      await notifier.load('tok');
+      expect(notifier.sessionExpired, isTrue);
+
+      when(() => svc.getSummary(any())).thenAnswer((_) async => summary());
+      await notifier.load('tok');
+
+      expect(notifier.sessionExpired, isFalse);
+      expect(notifier.status, SupervisionStatus.ready);
+    });
+  });
 }
