@@ -90,7 +90,9 @@ class _LogoRow extends StatelessWidget {
             color: lyoAccent,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(Icons.radio, size: 20, color: Colors.white),
+          child: const ExcludeSemantics(
+            child: Icon(Icons.radio, size: 20, color: Colors.white),
+          ),
         ),
         const SizedBox(width: lyoGapS),
         const Text(
@@ -250,21 +252,24 @@ class _ArtCard extends StatelessWidget {
 class _HeroCopy extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Listen live.\nHear everything.',
-          style: TextStyle(
-            color: lyoTextDark,
-            fontSize: lyoDisplay,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.8,
-            height: 1.15,
+        Semantics(
+          header: true,
+          child: const Text(
+            'Listen live.\nHear everything.',
+            style: TextStyle(
+              color: lyoTextDark,
+              fontSize: lyoDisplay,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.8,
+              height: 1.15,
+            ),
           ),
         ),
-        SizedBox(height: lyoGapM),
-        Text(
+        const SizedBox(height: lyoGapM),
+        const Text(
           'Tune in to live radio stations or catch up on recorded episodes — all in one place.',
           style: TextStyle(
             color: lyoSubDark,

@@ -16,14 +16,22 @@ class FavoriteButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      toggled: isFavorited,
+      label: isFavorited ? 'Remove from favorites' : 'Add to favorites',
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Icon(
-          isFavorited ? Icons.favorite : Icons.favorite_border,
-          size: size,
-          color: isFavorited ? lyoAccent : lyoSubDark,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: ExcludeSemantics(
+            child: Icon(
+              isFavorited ? Icons.favorite : Icons.favorite_border,
+              size: size,
+              color: isFavorited ? lyoAccent : lyoSubDark,
+            ),
+          ),
         ),
       ),
     );

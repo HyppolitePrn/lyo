@@ -74,8 +74,11 @@ class _BrowseTabState extends State<BrowseTab> {
     final page = reset ? 1 : _page + 1;
     try {
       final token = context.read<AuthNotifier>().accessToken;
-      final items =
-          await _trackSvc.listTracks(page: page, limit: _limit, token: token);
+      final items = await _trackSvc.listTracks(
+        page: page,
+        limit: _limit,
+        token: token,
+      );
       if (!mounted) {
         return;
       }
@@ -113,10 +116,21 @@ class _BrowseTabState extends State<BrowseTab> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.grid_view_outlined,
-                  size: 48, color: lyoAccent.withValues(alpha: 0.4)),
+              ExcludeSemantics(
+                child: Icon(
+                  Icons.grid_view_outlined,
+                  size: 48,
+                  color: lyoAccent.withValues(alpha: 0.4),
+                ),
+              ),
               const SizedBox(height: lyoGapM),
-              Text(_error!, style: TextStyle(color: textSub, fontSize: lyoBody1)),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: textSub, fontSize: lyoBody1),
+                ),
+              ),
               const SizedBox(height: lyoGapM),
               TextButton(
                 onPressed: () => _load(reset: true),
@@ -139,19 +153,36 @@ class _BrowseTabState extends State<BrowseTab> {
                     height: 400,
                     child: Center(
                       child: _isLoading
-                          ? const CircularProgressIndicator(
-                              color: lyoAccent, strokeWidth: 2)
-                          : Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.grid_view_outlined,
+                          ? Semantics(
+                              label: 'Loading tracks',
+                              liveRegion: true,
+                              child: const CircularProgressIndicator(
+                                color: lyoAccent,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Semantics(
+                              liveRegion: true,
+                              label: 'No tracks yet',
+                              excludeSemantics: true,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.grid_view_outlined,
                                     size: 48,
-                                    color: lyoAccent.withValues(alpha: 0.4)),
-                                const SizedBox(height: lyoGapM),
-                                Text('No tracks yet',
+                                    color: lyoAccent.withValues(alpha: 0.4),
+                                  ),
+                                  const SizedBox(height: lyoGapM),
+                                  Text(
+                                    'No tracks yet',
                                     style: TextStyle(
-                                        color: textSub, fontSize: lyoBody1)),
-                              ],
+                                      color: textSub,
+                                      fontSize: lyoBody1,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                     ),
                   ),
@@ -161,15 +192,22 @@ class _BrowseTabState extends State<BrowseTab> {
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
                 itemCount: _tracks.length + (_hasMore ? 1 : 0),
-                separatorBuilder: (_, _) =>
-                    Divider(color: dark ? lyoBorderDark : lyoBorderLight, height: 1),
+                separatorBuilder: (_, _) => Divider(
+                  color: dark ? lyoBorderDark : lyoBorderLight,
+                  height: 1,
+                ),
                 itemBuilder: (context, i) {
                   if (i >= _tracks.length) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
-                        child: CircularProgressIndicator(
-                            color: lyoAccent, strokeWidth: 2),
+                        child: Semantics(
+                          label: 'Loading more tracks',
+                          child: const CircularProgressIndicator(
+                            color: lyoAccent,
+                            strokeWidth: 2,
+                          ),
+                        ),
                       ),
                     );
                   }
@@ -187,7 +225,11 @@ class _BrowseTabState extends State<BrowseTab> {
 }
 
 class _TrackTile extends StatelessWidget {
-  const _TrackTile({required this.track, required this.dark, required this.onTap});
+  const _TrackTile({
+    required this.track,
+    required this.dark,
+    required this.onTap,
+  });
 
   final Track track;
   final bool dark;
@@ -200,8 +242,14 @@ class _TrackTile extends StatelessWidget {
     final colors = trackColors(track.id);
     final flags = context.watch<FeatureFlags>();
     final favoritesEnabled = flags.isEnabled('favorites');
-    final favorites = favoritesEnabled ? context.watch<FavoritesNotifier>() : null;
+    final favorites = favoritesEnabled
+        ? context.watch<FavoritesNotifier>()
+        : null;
     final playlistsEnabled = flags.isEnabled('playlists');
+    final subtitle = [
+      if (track.artist?.isNotEmpty == true) track.artist,
+      _fmtDuration(track.durationSeconds),
+    ].join(' · ');
 
     return GestureDetector(
       onTap: onTap,
@@ -210,36 +258,50 @@ class _TrackTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            LyoArtworkTile(size: 52, radius: 10, color1: colors[0], color2: colors[1]),
+            LyoArtworkTile(
+              size: 52,
+              radius: 10,
+              color1: colors[0],
+              color2: colors[1],
+            ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    track.title,
-                    style: TextStyle(
-                      fontSize: lyoBody2,
-                      fontWeight: FontWeight.w600,
-                      color: textPrimary,
+              child: Semantics(
+                button: true,
+                label: '${track.title}, $subtitle',
+                hint: 'Play this track',
+                excludeSemantics: true,
+                onTap: onTap,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      track.title,
+                      style: TextStyle(
+                        fontSize: lyoBody2,
+                        fontWeight: FontWeight.w600,
+                        color: textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    [
-                      if (track.artist?.isNotEmpty == true) track.artist,
-                      _fmtDuration(track.durationSeconds),
-                    ].join(' · '),
-                    style: TextStyle(fontSize: lyoBody2 - 2, color: textSub),
-                  ),
-                ],
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: lyoBody2 - 2, color: textSub),
+                    ),
+                  ],
+                ),
               ),
             ),
             if (playlistsEnabled)
               IconButton(
-                icon: const Icon(Icons.playlist_add, size: 22, color: lyoSubDark),
+                tooltip: 'Add to a playlist',
+                icon: const Icon(
+                  Icons.playlist_add,
+                  size: 22,
+                  color: lyoSubDark,
+                ),
                 onPressed: () => showAddToPlaylistSheet(context, track.id),
               ),
             if (favorites != null)
@@ -253,7 +315,13 @@ class _TrackTile extends StatelessWidget {
                 },
               ),
             const SizedBox(width: 4),
-            const Icon(Icons.play_circle_outline, size: 22, color: lyoAccent),
+            const ExcludeSemantics(
+              child: Icon(
+                Icons.play_circle_outline,
+                size: 22,
+                color: lyoAccent,
+              ),
+            ),
           ],
         ),
       ),

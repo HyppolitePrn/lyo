@@ -36,9 +36,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     if (token == null) {
       return;
     }
-    final success = await context
-        .read<AuthNotifier>()
-        .resetPassword(token, _passwordCtrl.text);
+    final success = await context.read<AuthNotifier>().resetPassword(
+      token,
+      _passwordCtrl.text,
+    );
     if (mounted && success) {
       context.go('/login');
     }
@@ -58,6 +59,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             children: [
               const SizedBox(height: lyoGapL),
               IconButton(
+                tooltip: 'Back',
                 icon: const Icon(Icons.chevron_left),
                 padding: EdgeInsets.zero,
                 onPressed: () => context.pop(),
@@ -114,7 +116,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       ),
                       const SizedBox(height: 28),
                       _SubmitButton(
-                          isLoading: auth.isLoading, onPressed: _submit),
+                        isLoading: auth.isLoading,
+                        onPressed: _submit,
+                      ),
                       if (auth.error != null) ...[
                         const SizedBox(height: lyoGapM),
                         AuthErrorBanner(message: auth.error!),
@@ -146,12 +150,16 @@ class _SubmitButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         child: isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
+            ? Semantics(
+                label: 'Resetting your password',
+                liveRegion: true,
+                child: const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
                 ),
               )
             : const Text('Reset password'),

@@ -35,8 +35,8 @@ enum PlayerStatus { idle, connecting, playing, error }
 
 class PlayerNotifier extends ChangeNotifier {
   PlayerNotifier({ApiClient apiClient = const ApiClient()})
-      : _apiClient = apiClient,
-        _svc = PlayerService(apiClient);
+    : _apiClient = apiClient,
+      _svc = PlayerService(apiClient);
 
   final ApiClient _apiClient;
   final PlayerService _svc;
@@ -67,8 +67,10 @@ class PlayerNotifier extends ChangeNotifier {
 
       // Open WebSocket.
       final wsUri = _apiClient.wsUri('/streams/$streamId/listen', token: token);
-      _channel = WebSocketChannel.connect(wsUri,
-          protocols: const ['audio-stream']);
+      _channel = WebSocketChannel.connect(
+        wsUri,
+        protocols: const ['audio-stream'],
+      );
       await _channel!.ready.catchError((_) {});
 
       // Pipe binary frames into a broadcast stream controller.
@@ -104,11 +106,11 @@ class PlayerNotifier extends ChangeNotifier {
           .setAudioSource(_WsAudioSource(_byteController!.stream))
           .then((_) => _player?.play())
           .catchError((Object e) {
-        status = PlayerStatus.error;
-        error = 'Playback failed. Try again.';
-        notifyListeners();
-        _cleanup();
-      });
+            status = PlayerStatus.error;
+            error = 'Playback failed. Try again.';
+            notifyListeners();
+            _cleanup();
+          });
     } on ApiException catch (e) {
       status = PlayerStatus.error;
       error = e.message;

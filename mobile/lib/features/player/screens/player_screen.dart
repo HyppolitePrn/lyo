@@ -86,16 +86,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 status: player.status,
                 onConnect: () {
                   final token = context.read<AuthNotifier>().accessToken;
-                  context.read<PlayerNotifier>().connect(widget.streamId, token);
+                  context.read<PlayerNotifier>().connect(
+                    widget.streamId,
+                    token,
+                  );
                 },
                 onDisconnect: () => context.read<PlayerNotifier>().disconnect(),
               ),
               if (player.error != null) ...[
                 const SizedBox(height: lyoGapM),
-                Text(
-                  player.error!,
-                  style: const TextStyle(color: lyoError, fontSize: lyoCaption),
-                  textAlign: TextAlign.center,
+                Semantics(
+                  liveRegion: true,
+                  label: 'Error: ${player.error!}',
+                  excludeSemantics: true,
+                  child: Text(
+                    player.error!,
+                    style: const TextStyle(
+                      color: lyoError,
+                      fontSize: lyoCaption,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ],
             ],
@@ -112,15 +123,17 @@ class _ArtworkPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 220,
-      height: 220,
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(lyoRadiusCard),
-        boxShadow: const [lyoArtworkShadow],
+    return ExcludeSemantics(
+      child: Container(
+        width: 220,
+        height: 220,
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(lyoRadiusCard),
+          boxShadow: const [lyoArtworkShadow],
+        ),
+        child: const Icon(Icons.radio, size: 80, color: lyoAccent),
       ),
-      child: const Icon(Icons.radio, size: 80, color: lyoAccent),
     );
   }
 }
@@ -134,36 +147,50 @@ class _StatusIndicator extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final textSub = dark ? lyoSubDark : lyoSubLight;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (status == PlayerStatus.connecting ||
-            status == PlayerStatus.playing) ...[
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(
-              color: Colors.redAccent,
-              shape: BoxShape.circle,
+    final label = switch (status) {
+      PlayerStatus.idle => 'Not playing',
+      PlayerStatus.connecting => 'Connecting to the stream',
+      PlayerStatus.playing => 'Live, playing now',
+      PlayerStatus.error => 'Disconnected from the stream',
+    };
+
+    return Semantics(
+      liveRegion: true,
+      label: label,
+      excludeSemantics: true,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (status == PlayerStatus.connecting ||
+              status == PlayerStatus.playing) ...[
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Colors.redAccent,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: lyoGapS),
+          ],
+          Text(
+            switch (status) {
+              PlayerStatus.idle => 'Tap play to listen',
+              PlayerStatus.connecting => 'Connecting…',
+              PlayerStatus.playing => 'LIVE',
+              PlayerStatus.error => 'Disconnected',
+            },
+            style: TextStyle(
+              color: status == PlayerStatus.playing
+                  ? Colors.redAccent
+                  : textSub,
+              fontSize: lyoCaption,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.2,
             ),
           ),
-          const SizedBox(width: lyoGapS),
         ],
-        Text(
-          switch (status) {
-            PlayerStatus.idle => 'Tap play to listen',
-            PlayerStatus.connecting => 'Connecting…',
-            PlayerStatus.playing => 'LIVE',
-            PlayerStatus.error => 'Disconnected',
-          },
-          style: TextStyle(
-            color: status == PlayerStatus.playing ? Colors.redAccent : textSub,
-            fontSize: lyoCaption,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.2,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -181,30 +208,42 @@ class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = status == PlayerStatus.playing ||
-        status == PlayerStatus.connecting;
+    final isActive =
+        status == PlayerStatus.playing || status == PlayerStatus.connecting;
 
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: switch (status) {
+        PlayerStatus.playing => 'Stop listening',
+        PlayerStatus.connecting => 'Cancel connecting',
+        _ => 'Start listening',
+      },
       onTap: isActive ? onDisconnect : onConnect,
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: const BoxDecoration(
-          color: lyoAccent,
-          shape: BoxShape.circle,
-          boxShadow: [lyoCtaGlow],
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: isActive ? onDisconnect : onConnect,
+        child: Container(
+          width: 72,
+          height: 72,
+          decoration: const BoxDecoration(
+            color: lyoAccent,
+            shape: BoxShape.circle,
+            boxShadow: [lyoCtaGlow],
+          ),
+          child: status == PlayerStatus.connecting
+              ? const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : Icon(
+                  isActive ? Icons.stop : Icons.play_arrow,
+                  color: Colors.white,
+                  size: 36,
+                ),
         ),
-        child: status == PlayerStatus.connecting
-            ? const Padding(
-                padding: EdgeInsets.all(20),
-                child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2),
-              )
-            : Icon(
-                isActive ? Icons.stop : Icons.play_arrow,
-                color: Colors.white,
-                size: 36,
-              ),
       ),
     );
   }

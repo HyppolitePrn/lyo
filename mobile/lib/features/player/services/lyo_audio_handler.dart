@@ -11,13 +11,13 @@ import '../../track/models/track_model.dart';
 // Spotify's mini controls outside the app.
 class LyoAudioHandler extends BaseAudioHandler with SeekHandler {
   LyoAudioHandler()
-      : _player = AudioPlayer(
-          // Audio offload crashes ExoPlayer on some devices for this track
-          // format — IllegalArgumentException in DefaultAudioSink.
-          androidAudioOffloadPreferences: const AndroidAudioOffloadPreferences(
-            audioOffloadMode: AndroidAudioOffloadMode.disabled,
-          ),
-        ) {
+    : _player = AudioPlayer(
+        // Audio offload crashes ExoPlayer on some devices for this track
+        // format — IllegalArgumentException in DefaultAudioSink.
+        androidAudioOffloadPreferences: const AndroidAudioOffloadPreferences(
+          audioOffloadMode: AndroidAudioOffloadMode.disabled,
+        ),
+      ) {
     _player.playbackEventStream.listen(_broadcastState, onError: (Object _) {});
   }
 
@@ -32,12 +32,14 @@ class LyoAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> loadTrack(Track t) async {
     track = t;
-    mediaItem.add(MediaItem(
-      id: t.id,
-      title: t.title,
-      artist: t.artist?.isNotEmpty == true ? t.artist : 'Unknown artist',
-      duration: Duration(seconds: t.durationSeconds),
-    ));
+    mediaItem.add(
+      MediaItem(
+        id: t.id,
+        title: t.title,
+        artist: t.artist?.isNotEmpty == true ? t.artist : 'Unknown artist',
+        duration: Duration(seconds: t.durationSeconds),
+      ),
+    );
     await _player.setUrl(t.audioUrl);
     // just_audio's play() Future only resolves once playback stops, not once
     // it starts — awaiting it here would leave callers of loadTrack() (and
@@ -47,31 +49,33 @@ class LyoAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _broadcastState(PlaybackEvent event) {
     final playing = _player.playing;
-    playbackState.add(playbackState.value.copyWith(
-      controls: [
-        MediaControl.rewind,
-        playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.fastForward,
-      ],
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-      },
-      androidCompactActionIndices: const [0, 1, 2],
-      processingState: switch (_player.processingState) {
-        ProcessingState.idle => AudioProcessingState.idle,
-        ProcessingState.loading => AudioProcessingState.loading,
-        ProcessingState.buffering => AudioProcessingState.buffering,
-        ProcessingState.ready => AudioProcessingState.ready,
-        ProcessingState.completed => AudioProcessingState.completed,
-      },
-      playing: playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: 0,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: [
+          MediaControl.rewind,
+          playing ? MediaControl.pause : MediaControl.play,
+          MediaControl.fastForward,
+        ],
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+        },
+        androidCompactActionIndices: const [0, 1, 2],
+        processingState: switch (_player.processingState) {
+          ProcessingState.idle => AudioProcessingState.idle,
+          ProcessingState.loading => AudioProcessingState.loading,
+          ProcessingState.buffering => AudioProcessingState.buffering,
+          ProcessingState.ready => AudioProcessingState.ready,
+          ProcessingState.completed => AudioProcessingState.completed,
+        },
+        playing: playing,
+        updatePosition: _player.position,
+        bufferedPosition: _player.bufferedPosition,
+        speed: _player.speed,
+        queueIndex: 0,
+      ),
+    );
   }
 
   @override
@@ -89,10 +93,12 @@ class LyoAudioHandler extends BaseAudioHandler with SeekHandler {
     track = null;
     mediaItem.add(null);
     // idle deactivates the notification and stops the foreground service.
-    playbackState.add(playbackState.value.copyWith(
-      processingState: AudioProcessingState.idle,
-      playing: false,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.idle,
+        playing: false,
+      ),
+    );
   }
 
   // Only fires when the app is swiped away from the recent-apps list, not

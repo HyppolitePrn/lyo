@@ -29,7 +29,10 @@ class _RecordedPlayerScreenState extends State<RecordedPlayerScreen> {
     final token = context.read<AuthNotifier>().accessToken;
     // Uses the app-wide notifier so playback survives leaving this screen —
     // loadIfNeeded() no-ops if this track is already loaded/playing.
-    context.read<RecordedPlayerNotifier>().loadIfNeeded(widget.episodeId, token);
+    context.read<RecordedPlayerNotifier>().loadIfNeeded(
+      widget.episodeId,
+      token,
+    );
   }
 
   @override
@@ -66,110 +69,150 @@ class _RecordedPlayerView extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: lyoPadHMain),
           child: notifier.isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(
-                      color: lyoAccent, strokeWidth: 2))
+              ? Center(
+                  child: Semantics(
+                    label: 'Loading episode',
+                    liveRegion: true,
+                    child: const CircularProgressIndicator(
+                      color: lyoAccent,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                )
               : notifier.error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.headphones,
-                              size: 64, color: lyoAccent.withValues(alpha: 0.4)),
-                          const SizedBox(height: lyoGapM),
-                          Text(notifier.error!,
-                              style:
-                                  TextStyle(color: textSub, fontSize: lyoBody1)),
-                        ],
-                      ),
-                    )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              ? Center(
+                  child: Semantics(
+                    liveRegion: true,
+                    label: notifier.error!,
+                    excludeSemantics: true,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _Artwork(id: notifier.track!.id),
-                        const SizedBox(height: lyoGapXXL),
+                        Icon(
+                          Icons.headphones,
+                          size: 64,
+                          color: lyoAccent.withValues(alpha: 0.4),
+                        ),
+                        const SizedBox(height: lyoGapM),
                         Text(
-                          notifier.track!.title,
-                          style: TextStyle(
-                            color: textPrimary,
-                            fontSize: lyoH1,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: lyoGapS),
-                        Text(
-                          notifier.track!.artist?.isNotEmpty == true
-                              ? notifier.track!.artist!
-                              : 'Unknown artist',
-                          style: TextStyle(color: textSub, fontSize: lyoBody2),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: lyoGapXXL),
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 6),
-                          ),
-                          child: Slider(
-                            activeColor: lyoAccent,
-                            inactiveColor:
-                                dark ? lyoBorderDark : lyoBorderLight,
-                            min: 0,
-                            max: notifier.duration.inMilliseconds > 0
-                                ? notifier.duration.inMilliseconds.toDouble()
-                                : 1,
-                            value: notifier.position.inMilliseconds
-                                .clamp(
-                                    0,
-                                    notifier.duration.inMilliseconds > 0
-                                        ? notifier.duration.inMilliseconds
-                                        : 1)
-                                .toDouble(),
-                            onChanged: (v) => context
-                                .read<RecordedPlayerNotifier>()
-                                .seek(Duration(milliseconds: v.round())),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(_fmtClock(notifier.position),
-                                  style: TextStyle(
-                                      color: textSub, fontSize: lyoSmall)),
-                              Text(_fmtClock(notifier.duration),
-                                  style: TextStyle(
-                                      color: textSub, fontSize: lyoSmall)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: lyoGapXL),
-                        GestureDetector(
-                          onTap: () => context
-                              .read<RecordedPlayerNotifier>()
-                              .togglePlayPause(),
-                          child: Container(
-                            width: 72,
-                            height: 72,
-                            decoration: const BoxDecoration(
-                              color: lyoAccent,
-                              shape: BoxShape.circle,
-                              boxShadow: [lyoCtaGlow],
-                            ),
-                            child: Icon(
-                              notifier.isPlaying
-                                  ? Icons.pause
-                                  : Icons.play_arrow,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                          ),
+                          notifier.error!,
+                          style: TextStyle(color: textSub, fontSize: lyoBody1),
                         ),
                       ],
                     ),
+                  ),
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _Artwork(id: notifier.track!.id),
+                    const SizedBox(height: lyoGapXXL),
+                    Text(
+                      notifier.track!.title,
+                      style: TextStyle(
+                        color: textPrimary,
+                        fontSize: lyoH1,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: lyoGapS),
+                    Text(
+                      notifier.track!.artist?.isNotEmpty == true
+                          ? notifier.track!.artist!
+                          : 'Unknown artist',
+                      style: TextStyle(color: textSub, fontSize: lyoBody2),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: lyoGapXXL),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6,
+                        ),
+                      ),
+                      child: Slider(
+                        label: _fmtClock(notifier.position),
+                        semanticFormatterCallback: (v) => _fmtClock(
+                          Duration(milliseconds: v.round()),
+                        ),
+                        activeColor: lyoAccent,
+                        inactiveColor: dark ? lyoBorderDark : lyoBorderLight,
+                        min: 0,
+                        max: notifier.duration.inMilliseconds > 0
+                            ? notifier.duration.inMilliseconds.toDouble()
+                            : 1,
+                        value: notifier.position.inMilliseconds
+                            .clamp(
+                              0,
+                              notifier.duration.inMilliseconds > 0
+                                  ? notifier.duration.inMilliseconds
+                                  : 1,
+                            )
+                            .toDouble(),
+                        onChanged: (v) => context
+                            .read<RecordedPlayerNotifier>()
+                            .seek(Duration(milliseconds: v.round())),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Semantics(
+                        label:
+                            '${_fmtClock(notifier.position)} elapsed '
+                            'of ${_fmtClock(notifier.duration)}',
+                        excludeSemantics: true,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _fmtClock(notifier.position),
+                              style: TextStyle(
+                                color: textSub,
+                                fontSize: lyoSmall,
+                              ),
+                            ),
+                            Text(
+                              _fmtClock(notifier.duration),
+                              style: TextStyle(
+                                color: textSub,
+                                fontSize: lyoSmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: lyoGapXL),
+                    Semantics(
+                      button: true,
+                      label: notifier.isPlaying ? 'Pause' : 'Play',
+                      onTap: () => context
+                          .read<RecordedPlayerNotifier>()
+                          .togglePlayPause(),
+                      child: GestureDetector(
+                        onTap: () => context
+                            .read<RecordedPlayerNotifier>()
+                            .togglePlayPause(),
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: const BoxDecoration(
+                            color: lyoAccent,
+                            shape: BoxShape.circle,
+                            boxShadow: [lyoCtaGlow],
+                          ),
+                          child: Icon(
+                            notifier.isPlaying ? Icons.pause : Icons.play_arrow,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -183,19 +226,21 @@ class _Artwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = trackColors(id);
-    return Container(
-      width: 220,
-      height: 220,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(lyoRadiusCard),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
+    return ExcludeSemantics(
+      child: Container(
+        width: 220,
+        height: 220,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(lyoRadiusCard),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+          ),
+          boxShadow: const [lyoArtworkShadow],
         ),
-        boxShadow: const [lyoArtworkShadow],
+        child: const Icon(Icons.headphones, size: 80, color: Colors.white),
       ),
-      child: const Icon(Icons.headphones, size: 80, color: Colors.white),
     );
   }
 }

@@ -38,10 +38,10 @@ class _BroadcasterScreenState extends State<BroadcasterScreen> {
     }
     final token = context.read<AuthNotifier>().accessToken ?? '';
     await context.read<BroadcasterNotifier>().startBroadcast(
-          _titleCtrl.text.trim(),
-          _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-          token,
-        );
+      _titleCtrl.text.trim(),
+      _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+      token,
+    );
     _liveStartedAt = DateTime.now();
     _tickTimer();
   }
@@ -61,8 +61,7 @@ class _BroadcasterScreenState extends State<BroadcasterScreen> {
       final status = context.read<BroadcasterNotifier>().status;
       if (status == BroadcasterStatus.live && _liveStartedAt != null) {
         setState(() {
-          _liveSeconds =
-              DateTime.now().difference(_liveStartedAt!).inSeconds;
+          _liveSeconds = DateTime.now().difference(_liveStartedAt!).inSeconds;
         });
         _tickTimer();
       }
@@ -93,7 +92,8 @@ class _BroadcasterScreenState extends State<BroadcasterScreen> {
     final textPrimary = dark ? lyoTextDark : lyoTextLight;
     final textSub = dark ? lyoSubDark : lyoSubLight;
     final isLive = broadcaster.status == BroadcasterStatus.live;
-    final isBusy = broadcaster.status == BroadcasterStatus.creating ||
+    final isBusy =
+        broadcaster.status == BroadcasterStatus.creating ||
         broadcaster.status == BroadcasterStatus.ending;
 
     return Scaffold(
@@ -122,7 +122,9 @@ class _BroadcasterScreenState extends State<BroadcasterScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(
-              horizontal: lyoPadHMain, vertical: lyoGapXL),
+            horizontal: lyoPadHMain,
+            vertical: lyoGapXL,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -141,8 +143,9 @@ class _BroadcasterScreenState extends State<BroadcasterScreen> {
                       hint: 'Stream title',
                       label: 'Title',
                       textInputAction: TextInputAction.next,
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Title is required' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Title is required'
+                          : null,
                     ),
                     const SizedBox(height: lyoGapL),
                     LyoTextField(
@@ -176,37 +179,43 @@ class _LiveBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: const BoxDecoration(
-            color: Colors.redAccent,
-            shape: BoxShape.circle,
+    return Semantics(
+      liveRegion: true,
+      label: 'You are live',
+      value: 'On air for $duration',
+      excludeSemantics: true,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: const BoxDecoration(
+              color: Colors.redAccent,
+              shape: BoxShape.circle,
+            ),
           ),
-        ),
-        const SizedBox(width: lyoGapS),
-        const Text(
-          'LIVE',
-          style: TextStyle(
-            color: Colors.redAccent,
-            fontSize: lyoCaption,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.5,
+          const SizedBox(width: lyoGapS),
+          const Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.redAccent,
+              fontSize: lyoCaption,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.5,
+            ),
           ),
-        ),
-        const SizedBox(width: lyoGapL),
-        Text(
-          duration,
-          style: const TextStyle(
-            color: lyoAccent,
-            fontSize: lyoBody1,
-            fontWeight: FontWeight.w600,
+          const SizedBox(width: lyoGapL),
+          Text(
+            duration,
+            style: const TextStyle(
+              color: lyoAccent,
+              fontSize: lyoBody1,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -229,8 +238,12 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isBusy) {
-      return const Center(
-        child: CircularProgressIndicator(color: lyoAccent),
+      return Center(
+        child: Semantics(
+          label: isLive ? 'Ending your stream' : 'Starting your stream',
+          liveRegion: true,
+          child: const CircularProgressIndicator(color: lyoAccent),
+        ),
       );
     }
 
@@ -266,7 +279,10 @@ class _ActionButton extends StatelessWidget {
       child: const Text(
         'Go Live',
         style: TextStyle(
-            fontSize: lyoBody1, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+          fontSize: lyoBody1,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

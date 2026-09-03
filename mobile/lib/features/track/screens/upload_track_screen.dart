@@ -43,10 +43,10 @@ class _UploadTrackScreenState extends State<UploadTrackScreen> {
     }
     final token = context.read<AuthNotifier>().accessToken ?? '';
     await context.read<UploadTrackNotifier>().upload(
-          title: _titleCtrl.text.trim(),
-          artist: _artistCtrl.text.trim().isEmpty ? null : _artistCtrl.text.trim(),
-          token: token,
-        );
+      title: _titleCtrl.text.trim(),
+      artist: _artistCtrl.text.trim().isEmpty ? null : _artistCtrl.text.trim(),
+      token: token,
+    );
   }
 
   @override
@@ -64,32 +64,43 @@ class _UploadTrackScreenState extends State<UploadTrackScreen> {
         backgroundColor: bg,
         appBar: AppBar(backgroundColor: bg, elevation: 0),
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.check_circle, size: 56, color: lyoAccent),
-              const SizedBox(height: lyoGapM),
-              Text('Track uploaded',
-                  style: TextStyle(
-                      color: textPrimary,
-                      fontSize: lyoH1,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: lyoGapS),
-              Text(upload.uploadedTrack?.title ?? '',
-                  style: TextStyle(color: textSub, fontSize: lyoBody2)),
-              const SizedBox(height: lyoGapXL),
-              ElevatedButton(
-                onPressed: () {
-                  upload.reset();
-                  Navigator.of(context).pop();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: lyoAccent,
-                  foregroundColor: Colors.white,
+          child: Semantics(
+            liveRegion: true,
+            label: 'Track uploaded: ${upload.uploadedTrack?.title ?? ''}',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ExcludeSemantics(
+                  child: Icon(Icons.check_circle, size: 56, color: lyoAccent),
                 ),
-                child: const Text('Done'),
-              ),
-            ],
+                const SizedBox(height: lyoGapM),
+                Text(
+                  'Track uploaded',
+                  style: TextStyle(
+                    color: textPrimary,
+                    fontSize: lyoH1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: lyoGapS),
+                Text(
+                  upload.uploadedTrack?.title ?? '',
+                  style: TextStyle(color: textSub, fontSize: lyoBody2),
+                ),
+                const SizedBox(height: lyoGapXL),
+                ElevatedButton(
+                  onPressed: () {
+                    upload.reset();
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: lyoAccent,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -104,40 +115,62 @@ class _UploadTrackScreenState extends State<UploadTrackScreen> {
         title: Text(
           'Upload Track',
           style: TextStyle(
-              color: textPrimary, fontSize: lyoH1, fontWeight: FontWeight.w700),
+            color: textPrimary,
+            fontSize: lyoH1,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(
-              horizontal: lyoPadHMain, vertical: lyoGapXL),
+            horizontal: lyoPadHMain,
+            vertical: lyoGapXL,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (upload.error != null) AuthErrorBanner(message: upload.error!),
-              GestureDetector(
+              Semantics(
+                button: true,
+                enabled: !isBusy,
+                label: upload.selectedFile == null
+                    ? 'Choose an audio file'
+                    : 'Selected file: '
+                          '${upload.selectedFile!.path.split('/').last}. '
+                          'Choose a different one',
+                excludeSemantics: true,
                 onTap: isBusy ? null : _pickFile,
-                child: Container(
-                  padding: const EdgeInsets.all(lyoGapL),
-                  decoration: BoxDecoration(
-                    color: surface,
-                    borderRadius: BorderRadius.circular(lyoRadiusCard),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.audio_file_outlined,
-                          size: 28, color: lyoAccent),
-                      const SizedBox(width: lyoGapM),
-                      Expanded(
-                        child: Text(
-                          upload.selectedFile?.path.split('/').last ??
-                              'Choose an audio file',
-                          style: TextStyle(color: textPrimary, fontSize: lyoBody2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                child: GestureDetector(
+                  onTap: isBusy ? null : _pickFile,
+                  child: Container(
+                    padding: const EdgeInsets.all(lyoGapL),
+                    decoration: BoxDecoration(
+                      color: surface,
+                      borderRadius: BorderRadius.circular(lyoRadiusCard),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.audio_file_outlined,
+                          size: 28,
+                          color: lyoAccent,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: lyoGapM),
+                        Expanded(
+                          child: Text(
+                            upload.selectedFile?.path.split('/').last ??
+                                'Choose an audio file',
+                            style: TextStyle(
+                              color: textPrimary,
+                              fontSize: lyoBody2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -167,8 +200,15 @@ class _UploadTrackScreenState extends State<UploadTrackScreen> {
               ),
               const SizedBox(height: lyoGapXXXL),
               isBusy
-                  ? const Center(
-                      child: CircularProgressIndicator(color: lyoAccent))
+                  ? Center(
+                      child: Semantics(
+                        label: 'Uploading your track',
+                        liveRegion: true,
+                        child: const CircularProgressIndicator(
+                          color: lyoAccent,
+                        ),
+                      ),
+                    )
                   : ElevatedButton(
                       onPressed: _upload,
                       style: ElevatedButton.styleFrom(
@@ -183,9 +223,10 @@ class _UploadTrackScreenState extends State<UploadTrackScreen> {
                       child: const Text(
                         'Upload',
                         style: TextStyle(
-                            fontSize: lyoBody1,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5),
+                          fontSize: lyoBody1,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
             ],

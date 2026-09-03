@@ -3,7 +3,9 @@ class LiveStream {
     required this.id,
     required this.broadcasterId,
     required this.title,
-    required this.status, required this.startedAt, this.description,
+    required this.status,
+    required this.startedAt,
+    this.description,
     this.endedAt,
   });
 

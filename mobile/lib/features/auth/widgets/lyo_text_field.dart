@@ -4,7 +4,9 @@ import '../../../core/theme/lyo_tokens.dart';
 
 class LyoTextField extends StatefulWidget {
   const LyoTextField({
-    required this.controller, required this.hint, super.key,
+    required this.controller,
+    required this.hint,
+    super.key,
     this.label,
     this.obscure = false,
     this.keyboardType,
@@ -56,8 +58,11 @@ class _LyoTextFieldState extends State<LyoTextField> {
         prefixIcon: widget.prefixIcon,
         suffixIcon: widget.obscure
             ? IconButton(
+                tooltip: _obscured ? 'Show password' : 'Hide password',
                 icon: Icon(
-                  _obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                  _obscured
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
                   size: 20,
                   color: lyoSubDark,
                 ),

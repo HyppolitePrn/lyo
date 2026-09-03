@@ -10,7 +10,7 @@ enum FavoritesStatus { idle, loading, ready, error }
 
 class FavoritesNotifier extends ChangeNotifier {
   FavoritesNotifier({FavoritesService? favoritesService})
-      : _svc = favoritesService ?? const FavoritesService(ApiClient());
+    : _svc = favoritesService ?? const FavoritesService(ApiClient());
 
   final FavoritesService _svc;
 

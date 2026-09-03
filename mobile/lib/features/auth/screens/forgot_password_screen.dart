@@ -49,6 +49,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               children: [
                 const SizedBox(height: lyoGapL),
                 IconButton(
+                  tooltip: 'Back',
                   icon: const Icon(Icons.chevron_left),
                   padding: EdgeInsets.zero,
                   onPressed: () => context.pop(),
@@ -133,12 +134,16 @@ class _SubmitButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         child: isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
+            ? Semantics(
+                label: 'Sending the reset link',
+                liveRegion: true,
+                child: const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
                 ),
               )
             : const Text('Send reset link'),

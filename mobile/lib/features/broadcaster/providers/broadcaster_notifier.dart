@@ -13,8 +13,8 @@ enum BroadcasterStatus { idle, creating, live, ending, error }
 
 class BroadcasterNotifier extends ChangeNotifier {
   BroadcasterNotifier({ApiClient apiClient = const ApiClient()})
-      : _apiClient = apiClient,
-        _svc = BroadcastService(apiClient);
+    : _apiClient = apiClient,
+      _svc = BroadcastService(apiClient);
 
   final ApiClient _apiClient;
   final BroadcastService _svc;
@@ -53,10 +53,14 @@ class BroadcasterNotifier extends ChangeNotifier {
       final liveStream = await _svc.createStream(title, description, token);
 
       // Open WebSocket ingest connection.
-      final wsUri =
-          _apiClient.wsUri('/streams/${liveStream.id}/ingest', token: token);
-      _channel = WebSocketChannel.connect(wsUri,
-          protocols: const ['audio-ingest']);
+      final wsUri = _apiClient.wsUri(
+        '/streams/${liveStream.id}/ingest',
+        token: token,
+      );
+      _channel = WebSocketChannel.connect(
+        wsUri,
+        protocols: const ['audio-ingest'],
+      );
       await _channel!.ready.catchError((_) {});
 
       // Start mic capture with AAC-LC ADTS encoding.
