@@ -7,9 +7,14 @@ services:
     ports:
       - "${SERVER_PORT:-8080}:8080"
     env_file: .env
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      APP_ENV: production
     depends_on:
       postgres:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     restart: unless-stopped
 
   # ── Database ──────────────────────────────────────────────────────────────────

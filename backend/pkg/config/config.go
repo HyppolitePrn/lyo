@@ -38,10 +38,16 @@ type AuthConfig struct {
 	RefreshTTL time.Duration
 }
 
+// ObsConfig configures telemetry. Enabled=false disables every OTLP
+// exporter — the process still logs to stdout, but creates no connection to a
+// collector. Keep it off for local runs without the observability stack.
 type ObsConfig struct {
-	LogLevel     string
-	ServiceName  string
-	OTLPEndpoint string
+	Enabled        bool
+	LogLevel       string
+	ServiceName    string
+	ServiceVersion string
+	Environment    string
+	OTLPEndpoint   string
 }
 
 type StreamConfig struct {
@@ -97,9 +103,12 @@ func Load() (*Config, error) {
 			RefreshTTL: getDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
 		},
 		Obs: ObsConfig{
-			LogLevel:     getEnv("LOG_LEVEL", "info"),
-			ServiceName:  getEnv("OTEL_SERVICE_NAME", "lyo-backend"),
-			OTLPEndpoint: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
+			Enabled:        getBool("OTEL_ENABLED", true),
+			LogLevel:       getEnv("LOG_LEVEL", "info"),
+			ServiceName:    getEnv("OTEL_SERVICE_NAME", "lyo-backend"),
+			ServiceVersion: getEnv("OTEL_SERVICE_VERSION", "dev"),
+			Environment:    getEnv("APP_ENV", "development"),
+			OTLPEndpoint:   getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
 		},
 		Stream: StreamConfig{
 			MaxListeners: getInt("STREAM_MAX_LISTENERS", 500),
@@ -143,6 +152,15 @@ func getInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func getBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return fallback

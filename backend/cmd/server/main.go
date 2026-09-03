@@ -69,7 +69,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := observability.NewLogger(cfg.Obs.LogLevel)
+	// Telemetry first: everything below logs through the provider it returns,
+	// so traces, metrics and logs share one resource identity from line one.
+	otelCtx, otelCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	obs, err := observability.Setup(otelCtx, observability.Config{
+		Enabled:        cfg.Obs.Enabled,
+		ServiceName:    cfg.Obs.ServiceName,
+		ServiceVersion: cfg.Obs.ServiceVersion,
+		Environment:    cfg.Obs.Environment,
+		OTLPEndpoint:   cfg.Obs.OTLPEndpoint,
+		LogLevel:       cfg.Obs.LogLevel,
+	})
+	otelCancel()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "observability error: %v\n", err)
+		os.Exit(1)
+	}
+	logger := obs.Logger
 
 	// ── Database pool ────────────────────────────────────────────────────────
 	poolCfg, err := pgxpool.ParseConfig(cfg.Database.URL)
@@ -135,6 +151,7 @@ func main() {
 	}))
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RequestID)
+	r.Use(middleware.Trace(cfg.Obs.ServiceName))
 	r.Use(middleware.Logger(logger))
 	r.Use(middleware.Authenticate(authSvc))
 
@@ -182,6 +199,11 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "err", err)
+	}
+	// Flush buffered spans, metrics and logs — otherwise the last window of
+	// telemetry before a deploy, which is exactly the interesting one, is lost.
+	if err := obs.Shutdown(ctx); err != nil {
+		logger.Error("telemetry shutdown error", "err", err)
 	}
 }
 

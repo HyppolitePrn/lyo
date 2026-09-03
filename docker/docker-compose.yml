@@ -18,6 +18,7 @@ services:
       SMTP_PORT: "1025"
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     depends_on:
       postgres:
         condition: service_healthy
@@ -25,6 +26,8 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     restart: unless-stopped
 
   # ── Database ─────────────────────────────────────────────────────────────────
