@@ -18,6 +18,7 @@ import 'features/home/providers/home_notifier.dart';
 import 'features/player/providers/player_notifier.dart';
 import 'features/player/providers/recorded_player_notifier.dart';
 import 'features/player/services/lyo_audio_handler.dart';
+import 'features/player/services/volume_controller.dart';
 import 'features/playlist/providers/playlist_notifier.dart';
 import 'features/track/providers/upload_track_notifier.dart';
 
@@ -35,10 +36,14 @@ Future<void> main() async {
   // still plays in the background either way, this only affects visibility.
   unawaited(Permission.notification.request());
 
+  // One volume for the whole app: the live player and the recorded player
+  // each own an AudioPlayer, and both follow this controller.
+  final volume = VolumeController();
+
   // Lets a track keep playing — with a Spotify-style notification and lock
   // screen controls — after the app is backgrounded.
   final audioHandler = await AudioService.init(
-    builder: LyoAudioHandler.new,
+    builder: () => LyoAudioHandler(volume: volume),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.lyo.mobile.audio',
       androidNotificationChannelName: 'Lyo playback',
@@ -63,7 +68,8 @@ Future<void> main() async {
         Provider<FeatureFlags>(create: (_) => const FeatureFlags()),
         ChangeNotifierProvider.value(value: auth),
         ChangeNotifierProvider(create: (_) => HomeNotifier()),
-        ChangeNotifierProvider(create: (_) => PlayerNotifier()),
+        ChangeNotifierProvider.value(value: volume),
+        ChangeNotifierProvider(create: (_) => PlayerNotifier(volume: volume)),
         ChangeNotifierProvider(
           create: (_) => RecordedPlayerNotifier(audioHandler: audioHandler),
         ),

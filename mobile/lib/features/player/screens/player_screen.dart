@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
 import '../providers/player_notifier.dart';
+import '../widgets/volume_control.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({required this.streamId, super.key});
@@ -93,6 +94,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 },
                 onDisconnect: () => context.read<PlayerNotifier>().disconnect(),
               ),
+              const SizedBox(height: lyoGapL),
+              const VolumeControl(),
               if (player.error != null) ...[
                 const SizedBox(height: lyoGapM),
                 Semantics(

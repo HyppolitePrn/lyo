@@ -5,6 +5,7 @@ import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
 import '../../track/utils/track_colors.dart';
 import '../providers/recorded_player_notifier.dart';
+import '../widgets/volume_control.dart';
 
 String _fmtClock(Duration d) {
   final m = d.inMinutes.remainder(60).toString().padLeft(1, '0');
@@ -184,7 +185,9 @@ class _RecordedPlayerView extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(height: lyoGapXL),
+                    const SizedBox(height: lyoGapM),
+                    const VolumeControl(),
+                    const SizedBox(height: lyoGapL),
                     Semantics(
                       button: true,
                       label: notifier.isPlaying ? 'Pause' : 'Play',
