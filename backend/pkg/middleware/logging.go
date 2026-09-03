@@ -49,7 +49,10 @@ func Logger(logger *slog.Logger) func(http.Handler) http.Handler {
 				}
 			}
 
-			logger.Info("request",
+			// InfoContext, not Info: the request context carries the span
+			// created by middleware.Trace, and that is what stamps trace_id on
+			// the line so Grafana can pivot from the log to the trace.
+			logger.InfoContext(r.Context(), "request",
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.Int("status", status),

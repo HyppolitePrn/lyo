@@ -1,0 +1,252 @@
+# Alert rules as code. Editing them in the Grafana UI is blocked: this file is
+# the source of truth and is reapplied on every restart.
+#
+# Two families, deliberately labelled apart (ADR 009):
+#   family=technical  — something is broken (the server failed)
+#   family=experience — nothing is broken and users are still suffering
+#                       (audio dropped, listeners disconnected)
+# An error-rate alert can never catch the second family, which is why it exists.
+
+apiVersion: 1
+
+groups:
+  - name: lyo-availability
+    folder: Lyo
+    interval: 1m
+    rules:
+      - uid: lyo-backend-down
+        title: Backend unreachable
+        condition: C
+        for: 2m
+        labels: { severity: critical, family: technical, service: lyo-backend }
+        annotations:
+          summary: The Lyo backend is not exposing metrics
+          description: >
+            Prometheus cannot scrape the backend through the collector. Either
+            the API is down or the telemetry pipeline is broken — in both cases
+            every other panel is showing stale data, not healthy data.
+          runbook: docker compose -f docker/docker-compose.yml ps; docker compose logs backend otel-collector
+        noDataState: Alerting
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, expr: 'up{job="lyo-backend"}', instant: true }
+          - refId: B
+            datasourceUid: "__expr__"
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      - uid: lyo-telemetry-export-failing
+        title: Telemetry export failing
+        condition: C
+        for: 5m
+        labels: { severity: warning, family: technical, service: otel-collector }
+        annotations:
+          summary: The collector is dropping telemetry it cannot forward
+          description: >
+            Observability that fails silently is worse than none, because the
+            dashboards keep looking plausible. Check Loki, Tempo and Prometheus
+            reachability from the collector.
+        noDataState: OK
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >
+                sum(rate(otelcol_exporter_send_failed_spans_total[5m]))
+                + sum(rate(otelcol_exporter_send_failed_metric_points_total[5m]))
+                + sum(rate(otelcol_exporter_send_failed_log_records_total[5m]))
+          - refId: B
+            datasourceUid: "__expr__"
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+  - name: lyo-performance
+    folder: Lyo
+    interval: 1m
+    rules:
+      - uid: lyo-error-rate-high
+        title: API error rate above 5%
+        condition: C
+        for: 5m
+        labels: { severity: critical, family: technical, service: lyo-backend }
+        annotations:
+          summary: More than 5% of requests are failing with 5xx
+          description: >
+            Server-side failures. Open the API Performance dashboard, find the
+            route in "Responses by status class", then pivot to its trace from
+            the error log panel.
+        noDataState: OK
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >
+                100 * sum(rate(http_server_request_duration_seconds_count{job="lyo-backend",http_response_status_code=~"5.."}[5m]))
+                / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="lyo-backend"}[5m])), 0.001)
+          - refId: B
+            datasourceUid: "__expr__"
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+
+      - uid: lyo-latency-p95-high
+        title: API latency p95 above 1s
+        condition: C
+        for: 10m
+        labels: { severity: warning, family: technical, service: lyo-backend }
+        annotations:
+          summary: 5% of requests take longer than a second
+          description: >
+            Sustained slowness. Check "Slowest routes (p95)" to find which
+            endpoint carries it, and the DB pool saturation behind it.
+        noDataState: OK
+        execErrState: Alerting
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >
+                histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="lyo-backend"}[5m])))
+          - refId: B
+            datasourceUid: "__expr__"
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      - uid: lyo-goroutine-leak
+        title: Goroutine count climbing
+        condition: C
+        for: 15m
+        labels: { severity: warning, family: technical, service: lyo-backend }
+        annotations:
+          summary: More than 1000 goroutines alive
+          description: >
+            Each listener and each stream owns goroutines. A count that only
+            rises means Unsubscribe or EndStream is not being reached on some
+            path, and the process will eventually exhaust memory.
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'max(go_goroutine_count{job="lyo-backend"})' }
+          - refId: B
+            datasourceUid: "__expr__"
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1000] }
+
+  - name: lyo-experience
+    folder: Lyo
+    interval: 1m
+    rules:
+      - uid: lyo-chunks-dropped
+        title: Listeners are losing audio
+        condition: C
+        for: 5m
+        labels: { severity: critical, family: experience, service: lyo-backend }
+        annotations:
+          summary: The hub is dropping audio chunks
+          description: >
+            Back-pressure is engaging (ADR 003): listeners' buffers are full and
+            the broadcaster keeps going, so someone is hearing gaps right now.
+            Nothing is "broken" — no error rate will show this. Check listener
+            count against STREAM_BUFFER_SIZE.
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'sum(rate(lyo_chunks_dropped_total{job="lyo-backend"}[5m]))' }
+          - refId: B
+            datasourceUid: "__expr__"
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      - uid: lyo-listener-write-failures
+        title: Listeners dropped by the server
+        condition: C
+        for: 5m
+        labels: { severity: warning, family: experience, service: lyo-backend }
+        annotations:
+          summary: Listener sessions are ending on failed writes
+          description: >
+            Sessions ending with reason=write_failed are the platform cutting
+            listeners off, as opposed to reason=client, which is someone simply
+            closing the app. Only the first kind is a problem.
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 'sum(rate(lyo_listener_disconnect_total{job="lyo-backend",reason="write_failed"}[5m]))'
+          - refId: B
+            datasourceUid: "__expr__"
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }

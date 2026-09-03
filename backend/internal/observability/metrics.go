@@ -72,9 +72,11 @@ func NewMetrics() (*Metrics, error) {
 		metric.WithUnit("{chunk}"))
 	collect(err)
 
+	// No unit is declared here on purpose: the Prometheus exporter appends the
+	// unit to the metric name, and "By" would turn this into
+	// lyo_stream_bytes_bytes_total. The name already says bytes.
 	metrics.streamBytes, err = m.Int64Counter("lyo.stream.bytes",
-		metric.WithDescription("Audio bytes ingested from broadcasters and delivered to listeners"),
-		metric.WithUnit("By"))
+		metric.WithDescription("Audio bytes ingested from broadcasters and delivered to listeners"))
 	collect(err)
 
 	metrics.listenerDisconnect, err = m.Int64Counter("lyo.listener.disconnect",

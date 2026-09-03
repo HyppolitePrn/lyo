@@ -116,6 +116,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - tempo
     restart: unless-stopped
 
   prometheus:
@@ -133,6 +134,16 @@ services:
       - "3100:3100"
     restart: unless-stopped
 
+  tempo:
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./tempo.yml:/etc/tempo.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo API / Grafana datasource
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:11.6.1
     environment:
@@ -146,6 +157,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - tempo
     restart: unless-stopped
 
 volumes:
@@ -154,3 +166,4 @@ volumes:
   pgadmin_data:
   prometheus_data:
   grafana_data:
+  tempo_data:
