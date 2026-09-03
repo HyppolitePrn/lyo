@@ -125,11 +125,13 @@ func TestRepoToggle(t *testing.T) {
 	}
 }
 
-func TestRepoToggle_PropagatesError(t *testing.T) {
+// An unknown flag name surfaces as ErrNotFound so the handler can answer 404
+// instead of 500.
+func TestRepoToggle_UnknownFlagIsNotFound(t *testing.T) {
 	mock := newMockPool(t)
 	mock.ExpectQuery("UPDATE feature_flags").WithArgs("nope", true).WillReturnError(pgx.ErrNoRows)
 
-	if _, err := features.NewRepository(mock).Toggle(context.Background(), "nope", true); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("err = %v, want %v", err, pgx.ErrNoRows)
+	if _, err := features.NewRepository(mock).Toggle(context.Background(), "nope", true); !errors.Is(err, features.ErrNotFound) {
+		t.Fatalf("err = %v, want %v", err, features.ErrNotFound)
 	}
 }

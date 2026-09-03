@@ -18,6 +18,7 @@ import (
 
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/playlist"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/track"
@@ -242,6 +243,14 @@ func (f *fakePlaylistSvc) RemoveTrack(_ context.Context, id, requesterID, trackI
 type flagSvc struct{ off map[string]bool }
 
 func (f flagSvc) IsEnabled(_ context.Context, name string) bool { return !f.off[name] }
+
+func (f flagSvc) All(_ context.Context) ([]features.Flag, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f flagSvc) Toggle(_ context.Context, _ string, _ bool) (*features.Flag, error) {
+	return nil, errors.New("not implemented")
+}
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 

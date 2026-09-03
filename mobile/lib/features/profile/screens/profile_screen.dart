@@ -202,6 +202,18 @@ class _ProfileBody extends StatelessWidget {
             icon: const Icon(Icons.logout),
             label: const Text('Se déconnecter'),
           ),
+          const SizedBox(height: lyoGapXL),
+          Center(
+            child: GestureDetector(
+              onLongPress: auth.role == 'admin'
+                  ? () => context.push('/admin')
+                  : null,
+              child: Text(
+                'v1.0.0',
+                style: TextStyle(color: textSub, fontSize: lyoSmall),
+              ),
+            ),
+          ),
         ],
       ),
     );

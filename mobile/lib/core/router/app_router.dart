@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 
+import '../../features/admin/screens/admin_screen.dart';
 import '../../features/admin/screens/supervision_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
@@ -103,6 +104,10 @@ GoRouter createAppRouter({String initialLocation = '/splash'}) => GoRouter(
     GoRoute(
       path: '/admin/supervision',
       builder: (context, state) => const SupervisionScreen(),
+    ),
+    GoRoute(
+      path: '/admin',
+      builder: (context, state) => const AdminScreen(),
     ),
   ],
 );

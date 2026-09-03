@@ -7,8 +7,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var errNotImplemented = errors.New("not implemented")
-
 // HTTPError carries an HTTP status code and message through the handler chain.
 type HTTPError struct {
 	Code int
