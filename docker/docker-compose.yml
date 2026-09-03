@@ -20,6 +20,11 @@ services:
       S3_PUBLIC_ENDPOINT: http://localhost:9000
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       PROMETHEUS_URL: http://prometheus:9090
+      # Same expression as the grafana service below — the two ends of the alert
+      # webhook must hold the identical value or every notification 401s. This
+      # `environment` entry deliberately overrides any ALERT_WEBHOOK_SECRET in
+      # ../.env, so the secret has exactly one source: Compose's own environment.
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-lyo_dev_alert_secret}
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,9 +155,9 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
-      # Interpolated into the provisioned webhook contact point; must match the
-      # backend's ALERT_WEBHOOK_SECRET.
-      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-change_me_to_a_random_string}
+      # Expanded by Grafana into the provisioned webhook contact point. Shares
+      # the expression above with the backend, so both ends always agree.
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-lyo_dev_alert_secret}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

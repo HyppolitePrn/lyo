@@ -11,6 +11,10 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       PROMETHEUS_URL: http://prometheus:9090
       APP_ENV: production
+      # Same expression as the grafana service — both ends of the alert webhook
+      # resolve from one source and cannot drift apart. Required here: a silent
+      # mismatch would mean every alert notification is rejected with a 401.
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:?set ALERT_WEBHOOK_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,8 +75,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      # Interpolated into the provisioned webhook contact point; must match the
-      # backend's ALERT_WEBHOOK_SECRET.
+      # Expanded by Grafana into the provisioned webhook contact point.
       ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:?set ALERT_WEBHOOK_SECRET}
     volumes:
       - grafana_data:/var/lib/grafana

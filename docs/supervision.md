@@ -30,6 +30,18 @@ The backend needs three variables, all in `.env.example`:
 | `PROMETHEUS_URL` | Powers `GET /admin/supervision`; blank serves incidents without live metrics |
 | `ALERT_WEBHOOK_SECRET` | Shared secret Grafana presents on `POST /internal/alerts`; **blank disables the endpoint** |
 
+Under docker-compose, `ALERT_WEBHOOK_SECRET` is *not* read from `.env`: the backend and Grafana both take
+it from Compose's own environment, from a single shared expression, so the two ends of the webhook cannot
+be configured differently. It defaults to a dev value; override it with
+
+```bash
+export ALERT_WEBHOOK_SECRET=$(openssl rand -hex 32)
+docker compose -f docker/docker-compose.yml up -d
+```
+
+In production the variable is required and Compose refuses to start without it — a mismatch would reject
+every alert notification with a 401, silently.
+
 `OTEL_ENABLED=false` keeps stdout logging and creates no exporter — use it to run the backend without
 the stack. Exporters connect lazily, so a collector that is down never delays startup.
 
