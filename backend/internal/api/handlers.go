@@ -13,6 +13,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/playlist"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
@@ -57,6 +58,8 @@ type StreamService interface {
 // FeatureService is the subset of features.Service consumed by the HTTP handlers.
 type FeatureService interface {
 	IsEnabled(ctx context.Context, name string) bool
+	All(ctx context.Context) ([]features.Flag, error)
+	Toggle(ctx context.Context, name string, enabled bool) (*features.Flag, error)
 }
 
 // PasswordResetService is the subset of passwordreset.Service consumed by the HTTP handlers.
@@ -175,6 +178,20 @@ func trackToAPI(t *track.Track) (Track, error) {
 		tr.Artist = &t.Artist
 	}
 	return tr, nil
+}
+
+func featureFlagToAPI(f *features.Flag) (FeatureFlag, error) {
+	id, err := uuid.Parse(f.ID)
+	if err != nil {
+		return FeatureFlag{}, fmt.Errorf("invalid feature flag ID %q: %w", f.ID, err)
+	}
+	return FeatureFlag{
+		Id:          openapi_types.UUID(id),
+		Name:        f.Name,
+		Enabled:     f.Enabled,
+		Description: f.Description,
+		UpdatedAt:   f.UpdatedAt,
+	}, nil
 }
 
 func userToAPI(u *user.User) User {
@@ -1321,10 +1338,82 @@ func (h *Handlers) RemoveTrackFromPlaylist(ctx context.Context, req RemoveTrackF
 	return RemoveTrackFromPlaylist200JSONResponse(apiPlaylist), nil
 }
 
-func (h *Handlers) ListFeatureFlags(_ context.Context, _ ListFeatureFlagsRequestObject) (ListFeatureFlagsResponseObject, error) {
-	return nil, errNotImplemented
+// GetPublicFeatureFlags serves the flag states clients need to gate their own
+// UI. It is deliberately unauthenticated — the app reads it before login — and
+// returns names and states only, never descriptions or timestamps.
+func (h *Handlers) GetPublicFeatureFlags(ctx context.Context, _ GetPublicFeatureFlagsRequestObject) (GetPublicFeatureFlagsResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	flags, err := h.featureSvc.All(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "list public feature flags timeout", "route", "GET /features")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	states := make(PublicFeatureFlags, len(flags))
+	for i := range flags {
+		states[flags[i].Name] = flags[i].Enabled
+	}
+	return GetPublicFeatureFlags200JSONResponse(states), nil
 }
 
-func (h *Handlers) ToggleFeatureFlag(_ context.Context, _ ToggleFeatureFlagRequestObject) (ToggleFeatureFlagResponseObject, error) {
-	return nil, errNotImplemented
+func (h *Handlers) ListFeatureFlags(ctx context.Context, _ ListFeatureFlagsRequestObject) (ListFeatureFlagsResponseObject, error) {
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok || !claims.Role.AtLeast(auth.RoleAdmin) {
+		return ListFeatureFlags403JSONResponse{ForbiddenJSONResponse{Code: 403, Message: "forbidden"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	flags, err := h.featureSvc.All(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "list feature flags timeout", "route", "GET /admin/features")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	items := make([]FeatureFlag, len(flags))
+	for i := range flags {
+		apiFlag, err := featureFlagToAPI(&flags[i])
+		if err != nil {
+			return nil, fmt.Errorf("marshal feature flag: %w", err)
+		}
+		items[i] = apiFlag
+	}
+	return ListFeatureFlags200JSONResponse{Items: items}, nil
+}
+
+func (h *Handlers) ToggleFeatureFlag(ctx context.Context, req ToggleFeatureFlagRequestObject) (ToggleFeatureFlagResponseObject, error) {
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok || !claims.Role.AtLeast(auth.RoleAdmin) {
+		return ToggleFeatureFlag403JSONResponse{ForbiddenJSONResponse{Code: 403, Message: "forbidden"}}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	flag, err := h.featureSvc.Toggle(ctx, req.Name, req.Body.Enabled)
+	if err != nil {
+		if errors.Is(err, features.ErrNotFound) {
+			return ToggleFeatureFlag404JSONResponse{NotFoundJSONResponse{Code: 404, Message: "feature flag not found"}}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "toggle feature flag timeout", "route", "PATCH /admin/features/{name}/toggle")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	apiFlag, err := featureFlagToAPI(flag)
+	if err != nil {
+		return nil, fmt.Errorf("marshal feature flag: %w", err)
+	}
+	return ToggleFeatureFlag200JSONResponse(apiFlag), nil
 }

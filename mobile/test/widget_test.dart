@@ -20,7 +20,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          Provider<FeatureFlags>(create: (_) => const FeatureFlags()),
+          ChangeNotifierProvider<FeatureFlags>(create: (_) => FeatureFlags()),
           ChangeNotifierProvider(
             create: (_) => AuthNotifier(tokenStore: InMemoryTokenStore()),
           ),

@@ -124,7 +124,7 @@ All features follow the same structure:
 - `services/<feature>_service.dart` — raw API calls via `ApiClient`
 - `screens/` + `widgets/` — consume notifiers via `context.watch<T>()` (rebuilds on change) or `context.read<T>()` (one-off calls, e.g. inside callbacks/`initState`)
 
-Notifiers are registered once in `main.dart` under a `MultiProvider` (`ChangeNotifierProvider` per notifier, plus a plain `Provider<FeatureFlags>`). Notifiers that need the current auth token (e.g. `PlayerNotifier.connect`, `BroadcasterNotifier.startBroadcast`) take it as a method parameter — read it from `AuthNotifier` via `context.read<AuthNotifier>().accessToken` at the call site — since notifiers don't reach into each other directly.
+Notifiers are registered once in `main.dart` under a `MultiProvider` (`ChangeNotifierProvider` per notifier, `FeatureFlags` included). Notifiers that need the current auth token (e.g. `PlayerNotifier.connect`, `BroadcasterNotifier.startBroadcast`) take it as a method parameter — read it from `AuthNotifier` via `context.read<AuthNotifier>().accessToken` at the call site — since notifiers don't reach into each other directly.
 
 `ApiClient` (`core/api/api_client.dart`) is a thin, stateless HTTP wrapper (`const ApiClient()`), constructor-injected into each notifier for testability. It derives the base URL from `--dart-define=API_BASE_URL` at build time (default: `http://10.0.2.2:8080` for Android emulator → host). WebSocket URIs are derived from the same base via `.wsUri()`.
 
@@ -144,20 +144,36 @@ Notifiers are registered once in `main.dart` under a `MultiProvider` (`ChangeNot
 
 Every new feature MUST be gated behind a feature flag. Flags are DB-backed and seeded at startup via `internal/features/seed.go`.
 
+Admins read and toggle flags at runtime through `GET /admin/features` and
+`PATCH /admin/features/{name}/toggle`. Clients read their own copy from the
+unauthenticated `GET /features`, which returns a `{name: enabled}` map and no
+metadata.
+
 ### Backend
 ```go
 // seed.go — add a row
 // handler — gate at the top
 if !h.featureSvc.IsEnabled(ctx, "flag_name") {
-    return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "feature disabled"}
+    return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "flag_name is disabled"}
 }
 ```
+
+The `… is/are disabled` suffix is a contract, not prose: 503 also means timeout
+or outage, and the mobile client keys off that suffix to tell them apart (see
+`ApiException.isFeatureDisabled`). `TestFeatureGates_MessageEndsWithDisabled`
+pins it.
 
 ### Mobile
 ```dart
 final flags = context.watch<FeatureFlags>();
 if (!flags.isEnabled('flag_name')) return const SizedBox.shrink();
 ```
+
+`FeatureFlags` (`core/features/feature_flags_provider.dart`) is a
+`ChangeNotifier` fetched from `GET /features` at startup. `FeatureFlags.defaults`
+mirrors `seed.go` and is what the UI renders on until the server answers, and
+what it falls back to when the API is unreachable — a flag the server never
+confirmed must not hide a working feature. Add every new flag to both lists.
 
 ### Available flags
 | Flag | Default | Description |

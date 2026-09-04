@@ -19,6 +19,7 @@ import (
 
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/passwordreset"
 	"github.com/hyppoliteprn/lyo/internal/playlist"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
@@ -97,6 +98,26 @@ func (nopStreamSvc) ListLiveStreams(_ context.Context) ([]streaming.Stream, erro
 type nopFeatureSvc struct{}
 
 func (nopFeatureSvc) IsEnabled(_ context.Context, _ string) bool { return true }
+func (nopFeatureSvc) All(_ context.Context) ([]features.Flag, error) {
+	return nil, errors.New("not implemented")
+}
+func (nopFeatureSvc) Toggle(_ context.Context, _ string, _ bool) (*features.Flag, error) {
+	return nil, errors.New("not implemented")
+}
+
+// mockFeatureSvc implements api.FeatureService with overridable behavior for admin handler tests.
+type mockFeatureSvc struct {
+	allFn    func(ctx context.Context) ([]features.Flag, error)
+	toggleFn func(ctx context.Context, name string, enabled bool) (*features.Flag, error)
+}
+
+func (m *mockFeatureSvc) IsEnabled(_ context.Context, _ string) bool { return true }
+func (m *mockFeatureSvc) All(ctx context.Context) ([]features.Flag, error) {
+	return m.allFn(ctx)
+}
+func (m *mockFeatureSvc) Toggle(ctx context.Context, name string, enabled bool) (*features.Flag, error) {
+	return m.toggleFn(ctx, name, enabled)
+}
 
 // mockPasswordResetService implements api.PasswordResetService for handler tests.
 type mockPasswordResetService struct {
@@ -166,6 +187,30 @@ func newTestRouter(
 	r.Use(middleware.Authenticate(authSvc))
 	strict := api.NewStrictHandlerWithOptions(
 		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, nopTrackSvc{}, nopPlaylistSvc{}, getUserByIDUC, updateUserByIDUC, nil, nil,
+			slog.New(slog.NewTextHandler(io.Discard, nil))),
+		nil,
+		api.StrictHTTPServerOptions{
+			ResponseErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
+				if he, ok := errors.AsType[*api.HTTPError](err); ok {
+					http.Error(w, he.Msg, he.Code)
+					return
+				}
+				http.Error(w, "internal error", http.StatusInternalServerError)
+			},
+			RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			},
+		},
+	)
+	api.HandlerFromMux(strict, r)
+	return r
+}
+
+func newTestRouterWithFeatureSvc(authSvc *auth.Service, featureSvc api.FeatureService) http.Handler {
+	r := chi.NewRouter()
+	r.Use(middleware.Authenticate(authSvc))
+	strict := api.NewStrictHandlerWithOptions(
+		api.NewHandlers(nil, authSvc, nopStreamSvc{}, featureSvc, nil, nopTrackSvc{}, nopPlaylistSvc{}, nil, nil, nil, nil,
 			slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
@@ -761,5 +806,188 @@ func TestHTTPError_Error(t *testing.T) {
 
 	if got := err.Error(); got != "503: request timeout" {
 		t.Fatalf("Error() = %q", got)
+	}
+}
+
+// ── ListFeatureFlags ────────────────────────────────────────────────────────
+
+func TestListFeatureFlagsHandler_Success(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	now := time.Now().UTC().Truncate(time.Second)
+	flagID := uuid.New().String()
+
+	featureSvc := &mockFeatureSvc{
+		allFn: func(_ context.Context) ([]features.Flag, error) {
+			return []features.Flag{
+				{ID: flagID, Name: "chat_websocket", Enabled: false, Description: "live chat", UpdatedAt: now},
+			}, nil
+		},
+	}
+
+	pair, err := authSvc.Issue(uuid.New().String(), auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := get(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/admin/features", pair.AccessToken)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+	}
+	var got api.FeatureFlagList
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Items) != 1 || got.Items[0].Name != "chat_websocket" {
+		t.Fatalf("unexpected flag list payload: %+v", got)
+	}
+}
+
+func TestListFeatureFlagsHandler_NonAdminForbidden(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	featureSvc := &mockFeatureSvc{}
+
+	pair, err := authSvc.Issue(uuid.New().String(), auth.RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := get(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/admin/features", pair.AccessToken)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body)
+	}
+}
+
+func TestListFeatureFlagsHandler_Unauthenticated(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	featureSvc := &mockFeatureSvc{}
+
+	w := get(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/admin/features", "")
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body)
+	}
+}
+
+// ── ToggleFeatureFlag ───────────────────────────────────────────────────────
+
+func TestToggleFeatureFlagHandler_Success(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	now := time.Now().UTC().Truncate(time.Second)
+	flagID := uuid.New().String()
+
+	featureSvc := &mockFeatureSvc{
+		toggleFn: func(_ context.Context, name string, enabled bool) (*features.Flag, error) {
+			if name != "chat_websocket" || !enabled {
+				t.Fatalf("unexpected toggle args: name=%s enabled=%v", name, enabled)
+			}
+			return &features.Flag{ID: flagID, Name: name, Enabled: enabled, Description: "live chat", UpdatedAt: now}, nil
+		},
+	}
+
+	pair, err := authSvc.Issue(uuid.New().String(), auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := patch(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/admin/features/chat_websocket/toggle", pair.AccessToken,
+		`{"enabled":true}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+	}
+	var got api.FeatureFlag
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Name != "chat_websocket" || !got.Enabled {
+		t.Fatalf("unexpected flag payload: %+v", got)
+	}
+}
+
+func TestToggleFeatureFlagHandler_NonAdminForbidden(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	featureSvc := &mockFeatureSvc{}
+
+	pair, err := authSvc.Issue(uuid.New().String(), auth.RoleBroadcaster)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := patch(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/admin/features/chat_websocket/toggle", pair.AccessToken,
+		`{"enabled":true}`)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body)
+	}
+}
+
+func TestToggleFeatureFlagHandler_NotFound(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	featureSvc := &mockFeatureSvc{
+		toggleFn: func(_ context.Context, _ string, _ bool) (*features.Flag, error) {
+			return nil, features.ErrNotFound
+		},
+	}
+
+	pair, err := authSvc.Issue(uuid.New().String(), auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := patch(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/admin/features/does_not_exist/toggle", pair.AccessToken,
+		`{"enabled":true}`)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body)
+	}
+}
+
+// ── GetPublicFeatureFlags ───────────────────────────────────────────────────
+
+// The client reads its flags before login, so an anonymous caller must get a
+// plain name-to-state map — no id, description or timestamp.
+func TestGetPublicFeatureFlagsHandler_AnonymousSucceeds(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	featureSvc := &mockFeatureSvc{
+		allFn: func(_ context.Context) ([]features.Flag, error) {
+			return []features.Flag{
+				{ID: uuid.New().String(), Name: "live_streaming", Enabled: true, Description: "live", UpdatedAt: now},
+				{ID: uuid.New().String(), Name: "chat_websocket", Enabled: false, Description: "chat", UpdatedAt: now},
+			}, nil
+		},
+	}
+
+	w := get(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/features", "")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+	}
+	var got map[string]bool
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 2 || !got["live_streaming"] || got["chat_websocket"] {
+		t.Fatalf("unexpected flag map: %+v", got)
+	}
+	if strings.Contains(w.Body.String(), "description") {
+		t.Fatalf("public payload leaks flag metadata: %s", w.Body)
+	}
+}
+
+func TestGetPublicFeatureFlagsHandler_TimeoutIs503(t *testing.T) {
+	featureSvc := &mockFeatureSvc{
+		allFn: func(context.Context) ([]features.Flag, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+
+	w := get(t, newTestRouterWithFeatureSvc(newTestAuthSvc(), featureSvc), "/features", "")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
 	}
 }

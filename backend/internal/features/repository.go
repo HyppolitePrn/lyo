@@ -70,6 +70,9 @@ func (r *pgRepo) Toggle(ctx context.Context, name string, enabled bool) (*Flag, 
 	var f Flag
 	err := r.pool.QueryRow(ctx, q, name, enabled).Scan(&f.ID, &f.Name, &f.Enabled, &f.Description, &f.UpdatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	return &f, nil

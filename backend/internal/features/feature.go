@@ -2,8 +2,12 @@ package features
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrNotFound is returned when a flag lookup or toggle targets an unknown name.
+var ErrNotFound = errors.New("feature flag not found")
 
 // Flag represents a toggleable feature flag stored in the database.
 type Flag struct {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/hyppoliteprn/lyo/internal/api"
 	"github.com/hyppoliteprn/lyo/internal/auth"
+	"github.com/hyppoliteprn/lyo/internal/features"
 	"github.com/hyppoliteprn/lyo/internal/playlist"
 	"github.com/hyppoliteprn/lyo/internal/streaming"
 	"github.com/hyppoliteprn/lyo/internal/track"
@@ -242,6 +243,14 @@ func (f *fakePlaylistSvc) RemoveTrack(_ context.Context, id, requesterID, trackI
 type flagSvc struct{ off map[string]bool }
 
 func (f flagSvc) IsEnabled(_ context.Context, name string) bool { return !f.off[name] }
+
+func (f flagSvc) All(_ context.Context) ([]features.Flag, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f flagSvc) Toggle(_ context.Context, _ string, _ bool) (*features.Flag, error) {
+	return nil, errors.New("not implemented")
+}
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -1765,5 +1774,36 @@ func TestListFavorites_NonUUIDTargetIs500(t *testing.T) {
 	w := f.do(t, http.MethodGet, "/users/me/favorites", f.token(t, "u-1", auth.RoleUser), "")
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body)
+	}
+}
+
+// The mobile client tells a disabled feature apart from the other causes of a
+// 503 (timeouts, outages) by the message suffix, and re-syncs its flags when it
+// sees one. Rewording a gate here without updating mobile/lib/core/api breaks
+// that, so pin the shape.
+func TestFeatureGates_MessageEndsWithDisabled(t *testing.T) {
+	cases := []struct {
+		flag, method, path, body string
+		role                     auth.Role
+	}{
+		{"track_uploads", http.MethodPost, "/tracks/upload-url", `{"filename":"x.mp3"}`, auth.RoleBroadcaster},
+		{"live_streaming", http.MethodPost, "/streams", `{"title":"x"}`, auth.RoleBroadcaster},
+		{"favorites", http.MethodGet, "/users/me/favorites", "", auth.RoleUser},
+		{"playlists", http.MethodGet, "/playlists", "", auth.RoleUser},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.flag, func(t *testing.T) {
+			f := newFixture(t, tc.flag)
+			w := f.do(t, tc.method, tc.path, f.token(t, uuid.NewString(), tc.role), tc.body)
+
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+			}
+			msg := strings.ToLower(strings.TrimSpace(w.Body.String()))
+			if !strings.HasSuffix(msg, "disabled") {
+				t.Fatalf("message = %q, want it to end with \"disabled\"", msg)
+			}
+		})
 	}
 }

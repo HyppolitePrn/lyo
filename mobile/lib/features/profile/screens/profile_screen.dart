@@ -191,6 +191,18 @@ class _ProfileBody extends StatelessWidget {
               onTap: () => context.push('/admin/supervision'),
             ),
           ],
+          // Not gated behind a flag on purpose: this is the only screen that
+          // can turn a flag back on, so hiding it behind one would let an
+          // admin lock themselves out.
+          if (auth.isAdmin) ...[
+            const SizedBox(height: lyoGapM),
+            _NavTile(
+              icon: Icons.toggle_on_outlined,
+              label: 'Feature flags',
+              dark: dark,
+              onTap: () => context.push('/admin'),
+            ),
+          ],
           const SizedBox(height: lyoGapXXL),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
@@ -201,6 +213,18 @@ class _ProfileBody extends StatelessWidget {
             onPressed: onSignOut,
             icon: const Icon(Icons.logout),
             label: const Text('Se déconnecter'),
+          ),
+          const SizedBox(height: lyoGapXL),
+          Center(
+            child: GestureDetector(
+              onLongPress: auth.role == 'admin'
+                  ? () => context.push('/admin')
+                  : null,
+              child: Text(
+                'v1.0.0',
+                style: TextStyle(color: textSub, fontSize: lyoSmall),
+              ),
+            ),
           ),
         ],
       ),
