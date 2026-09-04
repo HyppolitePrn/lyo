@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Streaming engine | Goroutines + channels (hub/fan-out pattern) |
 | Database         | PostgreSQL (pgx/v5), migrations via golang-migrate (embedded FS) |
 | Observability    | slog (JSON), OpenTelemetry, Grafana + Loki |
-| Mobile           | Flutter 3.41, Riverpod, just_audio |
+| Mobile           | Flutter 3.41, provider (ChangeNotifier), just_audio |
 | CI/CD             | GitHub Actions |
 | Containers       | Docker multi-stage (alpine), Docker Compose |
 
@@ -155,7 +155,7 @@ if !h.featureSvc.IsEnabled(ctx, "flag_name") {
 
 ### Mobile
 ```dart
-final flags = ref.watch(featureFlagsProvider);
+final flags = context.watch<FeatureFlags>();
 if (!flags.isEnabled('flag_name')) return const SizedBox.shrink();
 ```
 
@@ -163,14 +163,45 @@ if (!flags.isEnabled('flag_name')) return const SizedBox.shrink();
 | Flag | Default | Description |
 |------|---------|-------------|
 | `live_streaming` | true | Live broadcast feature |
+| `track_uploads` | true | Broadcaster track audio upload via presigned S3 URLs |
+| `playlists` | true | Playlist creation and management |
+| `favorites` | true | Favoriting tracks, streams, and playlists |
+| `admin_supervision` | true | Admin supervision dashboard, incident feed and alert notifications |
 | `chat_websocket` | false | Live chat between listeners |
 | `recommendations` | false | Listen-history recommendations |
 | `offline_mode` | false | Playlist caching for offline use |
 | `transcoding` | false | Adaptive bitrate transcoding |
 
+This table mirrors `internal/features/seed.go` — update both together.
+
 ---
 
-## Roles
+## Production Topology — Reverse Proxy
+
+`docker/docker-compose.prod.yml` publishes ports from **one** container: Caddy (`docker/Caddyfile`), which
+terminates TLS with automatically renewed ACME certificates. The backend, Grafana, Postgres and the
+observability stack expose ports only on the Compose network.
+
+Consequences when changing anything deployment-related:
+
+- **Never add a `ports:` mapping to a service in `docker-compose.prod.yml`.** Route it through the
+  Caddyfile instead — a published port is a plaintext bypass of TLS and of the security headers.
+- Security headers (HSTS, `X-Frame-Options`, …) are set **at the proxy**, once, for every route including
+  the WebSocket and webhook endpoints that are outside the OpenAPI contract. Do not add per-handler
+  header middleware.
+- `/internal/*` is 404 at the edge. A new infrastructure-only endpoint belongs under that prefix.
+- New WebSocket routes are covered by the `@websocket` matcher and bypass the 2 MB request-body cap;
+  anything else must fit under it (audio never transits the API — presigned S3 upload, ADR 010).
+- `TRUSTED_PROXY=true` is what allows `X-Forwarded-For` to be believed. `APP_ENV=production` refuses to
+  start without it. Never make it default to true.
+- Android release builds deny cleartext (`usesCleartextTraffic` is set in the debug/profile manifests
+  only), and the release workflow fails if `VPS_URL` is not `https://`.
+
+See [ADR 012](docs/adr/012-tls-reverse-proxy.md).
+
+---
+
+## Roles — No Route Writes a Role
 
 | Role | Permissions |
 |------|-------------|
@@ -180,6 +211,17 @@ if (!flags.isEnabled('flag_name')) return const SizedBox.shrink();
 | `admin` | All above + user management + feature flags |
 
 Role hierarchy is ordinal — `claims.Role.AtLeast(auth.RoleBroadcaster)` is the standard check.
+
+**Invariant: no HTTP request may raise the role of an account.** Registration always creates
+`user.selfServiceRole` (= `RoleUser`); `Repository.Update` writes username and email only;
+`POST /auth/refresh` re-reads the role from the database rather than copying it out of the token being
+exchanged, so a demoted or deleted account cannot renew its former privileges. Promotion is an operator
+action on the database.
+
+If a role-management endpoint is ever added, it must gate on `checkAdmin(ctx)` (`internal/api/supervision.go`)
+like every other `/admin/*` route, and refuse to grant a role above the caller's own. The regression tests
+that pin this invariant live in `internal/api/privilege_escalation_test.go` — extend them, do not weaken
+them.
 
 ---
 
@@ -207,9 +249,14 @@ defer cancel()
 ## Testing Conventions
 
 - Race detector is always on: `go test -race ./...`
-- Target ≥ 80% coverage on `internal/` packages
-- Integration tests: `backend/internal/*_integration_test.go` with build tag `//go:build integration`
+- Target ≥ 80% coverage on `internal/` packages, enforced by the CI coverage gate
+- Handler-level tests go through `net/http/httptest` (`internal/api/handlers_*_test.go`); the WebSocket
+  chain is covered end to end against a real connection in `internal/streaming/ws_test.go`
 - Mobile: `flutter test` for unit + widget tests
+
+There is no database integration-test suite today: repositories are tested against a `PgxPool` double.
+Adding one is tracked in [the test plan](docs/plan-de-tests.md) — do not document a convention for it
+here until the tests actually exist.
 
 ---
 

@@ -19,7 +19,7 @@ interrupteurs de fonctionnalités.
 | Base de données | PostgreSQL (pgx/v5) | 17 |
 | Mobile | Flutter + provider + just_audio | 3.41 |
 | Conteneurs | Docker + Docker Compose | — |
-| Observabilité | slog (JSON) ✅ · OpenTelemetry / Grafana / Loki 🚧 *(stack déployée, application pas encore instrumentée — voir [ADR 009](docs/adr/009-observability-otlp.md))* | — |
+| Observabilité | slog (JSON), OpenTelemetry (traces, métriques, logs via OTLP), Grafana + Loki ✅ *(le client mobile ne propage pas encore `traceparent` : la trace démarre donc au backend — voir [ADR 009](docs/adr/009-observability-otlp.md))* | — |
 
 L'API REST est **contract-first** : la source de vérité est `backend/api/openapi.yaml`. Les types serveur
 sont générés par `oapi-codegen` — ne jamais modifier `internal/api/api.gen.go` à la main.

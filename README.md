@@ -1,6 +1,8 @@
 # Lyo — StreamPulse
 
-Real-time audio streaming platform. Bloc 3 project — RNCP 38822.
+Real-time audio streaming platform.
+
+**Version française :** [`README.fr.md`](README.fr.md) · **Full documentation:** [`docs/`](docs/)
 
 A broadcaster streams live audio from a mobile app; listeners tune in with zero configuration. The backend fans audio chunks to N concurrent listeners via a hub/fan-out pattern. Feature access is role-gated and controlled at runtime through a feature flag system.
 
@@ -12,9 +14,9 @@ A broadcaster streams live audio from a mobile app; listeners tune in with zero 
 |-------|-----------|---------|
 | Backend API | Go + chi router | 1.26 |
 | Database | PostgreSQL (pgx/v5) | 17 |
-| Mobile | Flutter + Riverpod + just_audio | 3.41 |
+| Mobile | Flutter + provider + just_audio | 3.41 |
 | Containers | Docker + Docker Compose | — |
-| Observability | slog, OpenTelemetry, Grafana + Loki | — |
+| Observability | slog (JSON), OpenTelemetry (traces, metrics, logs over OTLP), Grafana + Loki ✅ *(the mobile client does not yet propagate `traceparent`, so a trace starts at the backend — [ADR 009](docs/adr/009-observability-otlp.md))* | — |
 
 The REST API is OpenAPI-first (`backend/api/openapi.yaml`). Server stubs are generated via `oapi-codegen` — never edit `internal/api/api.gen.go` manually.
 
@@ -96,10 +98,15 @@ Each feature follows the same layout:
 
 ```
 features/<name>/
-  providers/<name>_notifier.dart   ← Notifier<State>, business logic
+  providers/<name>_notifier.dart   ← ChangeNotifier, business logic
   services/<name>_service.dart     ← raw ApiClient calls
-  screens/ + widgets/              ← UI, reads state via ref.watch
+  screens/ + widgets/              ← UI, reads state via context.watch / context.read
 ```
+
+Notifiers are registered once in `main.dart` under a `MultiProvider`. Notifiers never reach into each
+other: one that needs the current auth token takes it as a method parameter, read at the call site from
+`AuthNotifier`. See [ADR 004](docs/adr/004-provider-over-riverpod.md) for why `provider` replaced
+Riverpod.
 
 `ApiClient` (`core/api/api_client.dart`) derives its base URL from `--dart-define=API_BASE_URL` at build time. The player feeds WebSocket binary AAC frames to `just_audio` via a custom `StreamAudioSource`. The broadcaster captures mic audio with the `record` package (AAC-LC, 44100 Hz, 128 kbps) and sends chunks over WebSocket.
 
@@ -120,17 +127,57 @@ features/<name>/
 
 All features are gated by DB-backed flags (seeded in `internal/features/seed.go`). Currently active:
 
-| Flag | Default |
-|------|---------|
-| `live_streaming` | **on** |
-| `chat_websocket` | off |
-| `recommendations` | off |
-| `offline_mode` | off |
-| `transcoding` | off |
+| Flag | Default | Implemented |
+|------|---------|-------------|
+| `live_streaming` | **on** | ✅ |
+| `track_uploads` | **on** | ✅ |
+| `playlists` | **on** | ✅ |
+| `favorites` | **on** | ✅ |
+| `chat_websocket` | off | ❌ flag only |
+| `recommendations` | off | ❌ flag only |
+| `offline_mode` | off | ❌ flag only |
+| `transcoding` | off | ❌ flag only |
+
+> The mobile client currently reads these from a compile-time constant map
+> (`core/features/feature_flags_provider.dart`); loading them from `GET /features` at runtime is on the
+> roadmap. Until then, toggling a flag server-side changes API behaviour but not the mobile UI.
 
 ---
 
 ## Deployment
+
+### TLS and the reverse proxy
+
+In production, **Caddy is the only container with a published port**. It terminates TLS on 443, redirects
+80, and proxies to the backend and Grafana over the private Compose network — neither of which publishes a
+port any more. Certificates are issued and renewed automatically over ACME, so there is no renewal cron to
+own. The rationale, and the gaps this does *not* close, are in
+[ADR 012](docs/adr/012-tls-reverse-proxy.md).
+
+| Variable | Meaning |
+|---|---|
+| `LYO_DOMAIN` | Public hostname. Certificates are issued for it **and** for `grafana.<domain>` |
+| `ACME_EMAIL` | Contact address for expiry notices |
+| `TRUSTED_PROXY` | Set to `true` behind the proxy so the API reads the client IP from `X-Forwarded-For`. `APP_ENV=production` refuses to start without it |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins; set to the public origin in production |
+
+| URL | Serves |
+|---|---|
+| `https://<LYO_DOMAIN>` | The API, including the `/streams/{id}/ingest` and `/listen` WebSockets (`wss://`) |
+| `https://grafana.<LYO_DOMAIN>` | Grafana |
+| `https://<LYO_DOMAIN>/internal/*` | Nothing — 404 at the edge; the alert webhook is reachable only from inside the network |
+
+Both DNS records must resolve to the host **before** the first start, or the ACME challenge fails. Left at
+the default `LYO_DOMAIN=localhost`, Caddy signs with its own internal CA, which is what lets the production
+stack come up on a laptop.
+
+To verify a deployment:
+
+```bash
+curl -sI https://<LYO_DOMAIN>/health | grep -i strict-transport-security
+curl -sI http://<LYO_DOMAIN>/health | head -1     # expect 308 -> https
+curl -s  -o /dev/null -w '%{http_code}\n' https://<LYO_DOMAIN>/internal/alerts   # expect 404
+```
 
 ### Backend — automatic on merge to `main`
 
@@ -140,8 +187,10 @@ Every push to `main` that touches `backend/**` triggers the full CI pipeline (li
 2. SSHs into the VPS and runs:
    ```bash
    docker compose -f docker-compose.prod.yml pull backend
-   docker compose -f docker-compose.prod.yml up -d backend
+   docker compose -f docker-compose.prod.yml up -d
    ```
+   The second command covers the whole stack, not just the backend: the API no longer publishes a port,
+   so it is reachable only once the Caddy edge is up. Compose recreates changed services only.
 
 No manual step is needed — merge the PR and the server updates itself.
 
@@ -183,7 +232,14 @@ docker login ghcr.io -u <github-username> --password <personal-access-token>
 
 # 3. Create the deploy directory and drop in the prod compose file + .env
 mkdir -p /path/to/deploy
-# place docker-compose.prod.yml and .env (with DATABASE_URL, JWT_SECRET, etc.) here
+# place docker-compose.prod.yml, Caddyfile, and .env here.
+#   .env needs DATABASE_URL, JWT_SECRET (>= 32 chars), POSTGRES_PASSWORD,
+#   GRAFANA_PASSWORD, ALERT_WEBHOOK_SECRET, LYO_DOMAIN, ACME_EMAIL.
+#   Compose refuses to start if GRAFANA_PASSWORD or ALERT_WEBHOOK_SECRET is unset.
+
+# 4. Open 80 and 443 — ACME validates over both, and 80 also serves the
+#    redirect to HTTPS. Nothing else needs to be reachable from outside.
+sudo ufw allow 80,443/tcp
 ```
 
 After that, all subsequent deploys are fully automated by CI.
@@ -213,5 +269,29 @@ cd mobile && flutter analyze && flutter test
 Key choices are documented in [`docs/adr/`](docs/adr/):
 
 - [ADR 001 — HTTP Router: chi](docs/adr/001-router-chi.md)
-- [ADR 002 — Flutter State Management: Riverpod](docs/adr/002-state-management-riverpod.md)
+- [ADR 002 — Flutter State Management: Riverpod](docs/adr/002-state-management-riverpod.md) — *superseded by 004*
 - [ADR 003 — Streaming Engine: Hub / Fan-out](docs/adr/003-streaming-hub-pattern.md)
+- [ADR 004 — Flutter State Management: Provider over Riverpod](docs/adr/004-provider-over-riverpod.md)
+- [ADR 005 — OpenAPI-first with code generation](docs/adr/005-openapi-first-codegen.md)
+- [ADR 006 — coder/websocket, WebSockets outside the contract](docs/adr/006-coder-websocket.md)
+- [ADR 007 — Permissive auth middleware](docs/adr/007-permissive-auth-middleware.md)
+- [ADR 008 — PostgreSQL + pgx, no ORM](docs/adr/008-postgres-pgx-no-orm.md)
+- [ADR 009 — OpenTelemetry as the single export protocol](docs/adr/009-observability-otlp.md)
+- [ADR 010 — Presigned S3 uploads](docs/adr/010-s3-presigned-upload.md)
+
+---
+
+## Documentation
+
+Full documentation index: **[`docs/README.md`](docs/README.md)** (FR / EN).
+
+| Document | Contents |
+|---|---|
+| [Requirements specification](docs/cahier-des-charges.en.md) · [FR](docs/cahier-des-charges.fr.md) | Context, feasibility incl. cost/ROI, scope, specifications, risks, roadmap, KPIs, compliance, reflective review |
+| [Architecture](docs/architecture/) | UML and BPMN diagrams, data model, security model, deployment — every diagram paired with a text alternative |
+| [Test plan & acceptance book](docs/plan-de-tests.md) | Strategy, measured coverage, R-01…R-15 acceptance scenarios |
+| [User stories](docs/user-stories.md) | 20 stories with acceptance criteria and traceability |
+| [Technology watch](docs/veille-technologique.fr.md) | Watch plan, competitive analysis, transport comparison |
+| [User guide](docs/guide-utilisateur.en.md) · [FR](docs/guide-utilisateur.fr.md) | Listener, broadcaster and administrator guides |
+| [Training plan](docs/plan-formation.fr.md) | Audience-specific training, including accessibility adaptations |
+| [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) | Conventions, quality gates, vulnerability reporting |
