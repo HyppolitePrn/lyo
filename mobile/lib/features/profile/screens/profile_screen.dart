@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/features/feature_flags_provider.dart';
 import '../../../core/theme/lyo_tokens.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../providers/account_notifier.dart';
 
 String initialsFrom(String? username) {
   final trimmed = username?.trim() ?? '';
@@ -214,6 +215,10 @@ class _ProfileBody extends StatelessWidget {
             icon: const Icon(Icons.logout),
             label: const Text('Se déconnecter'),
           ),
+          if (flags.isEnabled('account_deletion')) ...[
+            const SizedBox(height: lyoGapM),
+            const _DeleteAccountButton(),
+          ],
           const SizedBox(height: lyoGapXL),
           Center(
             child: GestureDetector(
@@ -228,6 +233,95 @@ class _ProfileBody extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Delete account ───────────────────────────────────────────────────────────
+
+/// The irreversible one — always behind a confirmation dialog.
+class _DeleteAccountButton extends StatelessWidget {
+  const _DeleteAccountButton();
+
+  Future<void> _confirmAndDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Supprimer le compte ?'),
+        content: const Text(
+          'Ton compte, tes playlists, tes favoris et tes pistes envoyées '
+          'seront définitivement effacés. Cette action est irréversible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: lyoError),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    final token = context.read<AuthNotifier>().accessToken;
+    if (token == null) {
+      return;
+    }
+
+    final deleted = await context.read<AccountNotifier>().deleteAccount(token);
+    if (!deleted || !context.mounted) {
+      return;
+    }
+    // The token now names an account that no longer exists, so drop it before
+    // anything else can try to use it.
+    context.read<AuthNotifier>().signOut();
+    context.go('/splash');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = context.watch<AccountNotifier>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 52),
+            foregroundColor: lyoError,
+            side: const BorderSide(color: lyoError),
+          ),
+          onPressed:
+              account.isDeleting ? null : () => _confirmAndDelete(context),
+          icon: account.isDeleting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: lyoError,
+                  ),
+                )
+              : const Icon(Icons.delete_forever_outlined),
+          label: const Text('Supprimer mon compte'),
+        ),
+        if (account.error != null) ...[
+          const SizedBox(height: lyoGapS),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              account.error!,
+              style: const TextStyle(color: lyoError, fontSize: lyoCaption),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

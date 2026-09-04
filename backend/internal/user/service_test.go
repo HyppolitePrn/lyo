@@ -37,6 +37,9 @@ func (m *mockRepo) GetByID(ctx context.Context, id string) (*user.User, error) {
 func (m *mockRepo) Update(ctx context.Context, id string, username, email *string) (*user.User, error) {
 	return m.updateFn(ctx, id, username, email)
 }
+func (m *mockRepo) Delete(_ context.Context, _ string) error {
+	return errors.New("not used")
+}
 func (m *mockRepo) UpdatePassword(ctx context.Context, id, passwordHash string) error {
 	if m.updatePasswordFn == nil {
 		return nil

@@ -47,4 +47,10 @@ class UserService {
     final data = await _api.get('/users/me', token: token);
     return User.fromJson(data as Map<String, dynamic>);
   }
+
+  /// Permanently erases the signed-in account, along with its streams, tracks,
+  /// playlists and uploaded audio. The server decides whose account from the
+  /// token, so there is nothing to pass but the token itself.
+  Future<void> deleteAccount(String token) =>
+      _api.delete('/users/me', token: token);
 }

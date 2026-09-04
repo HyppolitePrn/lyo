@@ -72,6 +72,37 @@
 	}
 }
 
+# ── Object storage (track audio) ──────────────────────────────────────────────
+
+s3.{$LYO_DOMAIN:localhost} {
+	import security_headers
+	encode zstd gzip
+
+	# Audio is the one payload that does not transit the API (ADR 010): the app
+	# PUTs it here directly with a presigned URL, and streams it back from here
+	# too. So this vhost gets its own, much larger body cap than the 2 MB the
+	# API allows — but a cap all the same, since an unbounded PUT is a way to
+	# fill the disk.
+	request_body {
+		max_size 200MB
+	}
+
+	# Host is passed through unchanged (Caddy's default), and it has to be: a
+	# presigned URL is SigV4-signed over its Host header, so rewriting it here
+	# would invalidate every signature the backend hands out.
+	reverse_proxy minio:9000 {
+		# Audio files are large and played while still arriving. Buffering the
+		# response would hold whole tracks in the proxy's memory and delay the
+		# first byte; streaming them through is what keeps playback responsive.
+		flush_interval -1
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
 # ── Grafana (supervision) ─────────────────────────────────────────────────────
 
 grafana.{$LYO_DOMAIN:localhost} {

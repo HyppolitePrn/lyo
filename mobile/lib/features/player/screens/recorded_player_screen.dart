@@ -27,13 +27,20 @@ class _RecordedPlayerScreenState extends State<RecordedPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    final token = context.read<AuthNotifier>().accessToken;
     // Uses the app-wide notifier so playback survives leaving this screen —
-    // loadIfNeeded() no-ops if this track is already loaded/playing.
-    context.read<RecordedPlayerNotifier>().loadIfNeeded(
-      widget.episodeId,
-      token,
-    );
+    // loadIfNeeded() no-ops if this track is already loaded/playing. Deferred
+    // to after the frame because HomeScreen watches the same notifier, and
+    // notifying it mid-build permanently freezes the listening element.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final token = context.read<AuthNotifier>().accessToken;
+      context.read<RecordedPlayerNotifier>().loadIfNeeded(
+        widget.episodeId,
+        token,
+      );
+    });
   }
 
   @override

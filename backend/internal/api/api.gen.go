@@ -445,6 +445,9 @@ type NotFound = Error
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
 
+// TooManyRequests defines model for TooManyRequests.
+type TooManyRequests = Error
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
@@ -597,6 +600,9 @@ type ServerInterface interface {
 	// Get a single track
 	// (GET /tracks/{id})
 	GetTrack(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// Permanently delete the authenticated user's account
+	// (DELETE /users/me)
+	DeleteUserByID(w http.ResponseWriter, r *http.Request)
 	// Return the authenticated user's profile
 	// (GET /users/me)
 	GetUserByID(w http.ResponseWriter, r *http.Request)
@@ -795,6 +801,12 @@ func (_ Unimplemented) DeleteTrack(w http.ResponseWriter, r *http.Request, id op
 // Get a single track
 // (GET /tracks/{id})
 func (_ Unimplemented) GetTrack(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Permanently delete the authenticated user's account
+// (DELETE /users/me)
+func (_ Unimplemented) DeleteUserByID(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1548,6 +1560,26 @@ func (siw *ServerInterfaceWrapper) GetTrack(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteUserByID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteUserByID(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteUserByID(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserByID operation middleware
 func (siw *ServerInterfaceWrapper) GetUserByID(w http.ResponseWriter, r *http.Request) {
 
@@ -1992,6 +2024,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/tracks/{id}", wrapper.GetTrack)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/users/me", wrapper.DeleteUserByID)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/users/me", wrapper.GetUserByID)
 	})
 	r.Group(func(r chi.Router) {
@@ -2029,6 +2064,8 @@ type ForbiddenJSONResponse Error
 type NotFoundJSONResponse Error
 
 type ServiceUnavailableJSONResponse Error
+
+type TooManyRequestsJSONResponse Error
 
 type UnauthorizedJSONResponse Error
 
@@ -2968,6 +3005,48 @@ func (response GetTrack404JSONResponse) VisitGetTrackResponse(w http.ResponseWri
 	return json.NewEncoder(w).Encode(response)
 }
 
+type DeleteUserByIDRequestObject struct {
+}
+
+type DeleteUserByIDResponseObject interface {
+	VisitDeleteUserByIDResponse(w http.ResponseWriter) error
+}
+
+type DeleteUserByID204Response struct {
+}
+
+func (response DeleteUserByID204Response) VisitDeleteUserByIDResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteUserByID401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteUserByID401JSONResponse) VisitDeleteUserByIDResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteUserByID429JSONResponse struct{ TooManyRequestsJSONResponse }
+
+func (response DeleteUserByID429JSONResponse) VisitDeleteUserByIDResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteUserByID503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteUserByID503JSONResponse) VisitDeleteUserByIDResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type GetUserByIDRequestObject struct {
 }
 
@@ -3318,6 +3397,9 @@ type StrictServerInterface interface {
 	// Get a single track
 	// (GET /tracks/{id})
 	GetTrack(ctx context.Context, request GetTrackRequestObject) (GetTrackResponseObject, error)
+	// Permanently delete the authenticated user's account
+	// (DELETE /users/me)
+	DeleteUserByID(ctx context.Context, request DeleteUserByIDRequestObject) (DeleteUserByIDResponseObject, error)
 	// Return the authenticated user's profile
 	// (GET /users/me)
 	GetUserByID(ctx context.Context, request GetUserByIDRequestObject) (GetUserByIDResponseObject, error)
@@ -4161,6 +4243,30 @@ func (sh *strictHandler) GetTrack(w http.ResponseWriter, r *http.Request, id ope
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetTrackResponseObject); ok {
 		if err := validResponse.VisitGetTrackResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteUserByID operation middleware
+func (sh *strictHandler) DeleteUserByID(w http.ResponseWriter, r *http.Request) {
+	var request DeleteUserByIDRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteUserByID(ctx, request.(DeleteUserByIDRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteUserByID")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteUserByIDResponseObject); ok {
+		if err := validResponse.VisitDeleteUserByIDResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

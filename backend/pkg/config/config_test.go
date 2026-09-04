@@ -20,6 +20,8 @@ var optionalVars = []string{
 	"S3_BUCKET_NAME", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY",
 	"S3_ENDPOINT", "S3_PUBLIC_ENDPOINT",
 	"TRUSTED_PROXY", "CORS_ALLOWED_ORIGINS", "APP_ENV",
+	"RATE_LIMIT_ENABLED", "RATE_LIMIT_REQUESTS", "RATE_LIMIT_WINDOW",
+	"RATE_LIMIT_AUTH_REQUESTS", "RATE_LIMIT_AUTH_WINDOW",
 }
 
 // setRequired sets the two variables Load panics without and clears the rest.
@@ -203,5 +205,66 @@ func TestLoad_ProductionRequiresProxy(t *testing.T) {
 	t.Setenv("TRUSTED_PROXY", "true")
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("production with TRUSTED_PROXY=true should load: %v", err)
+	}
+}
+
+func TestLoad_RateLimitDefaults(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	// On by default: a deployment that forgets the variable is protected, not
+	// wide open.
+	if !cfg.RateLimit.Enabled {
+		t.Error("rate limiting should default to enabled")
+	}
+	if cfg.RateLimit.Requests != 120 || cfg.RateLimit.Window != time.Minute {
+		t.Errorf("default tier = %d/%v, want 120/1m", cfg.RateLimit.Requests, cfg.RateLimit.Window)
+	}
+	if cfg.RateLimit.AuthRequests != 10 || cfg.RateLimit.AuthWindow != time.Minute {
+		t.Errorf("auth tier = %d/%v, want 10/1m", cfg.RateLimit.AuthRequests, cfg.RateLimit.AuthWindow)
+	}
+	if cfg.RateLimit.AuthRequests >= cfg.RateLimit.Requests {
+		t.Error("the auth tier must be tighter than the general one")
+	}
+}
+
+func TestLoad_RateLimitFromEnv(t *testing.T) {
+	setRequired(t)
+	t.Setenv("RATE_LIMIT_REQUESTS", "300")
+	t.Setenv("RATE_LIMIT_WINDOW", "30s")
+	t.Setenv("RATE_LIMIT_AUTH_REQUESTS", "5")
+	t.Setenv("RATE_LIMIT_AUTH_WINDOW", "10m")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.RateLimit.Requests != 300 || cfg.RateLimit.Window != 30*time.Second {
+		t.Errorf("default tier = %d/%v", cfg.RateLimit.Requests, cfg.RateLimit.Window)
+	}
+	if cfg.RateLimit.AuthRequests != 5 || cfg.RateLimit.AuthWindow != 10*time.Minute {
+		t.Errorf("auth tier = %d/%v", cfg.RateLimit.AuthRequests, cfg.RateLimit.AuthWindow)
+	}
+}
+
+// Turning the limiter off is a local convenience; in production it would leave
+// the credential endpoints accepting unlimited guesses.
+func TestLoad_ProductionRefusesDisabledRateLimit(t *testing.T) {
+	setRequired(t)
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("TRUSTED_PROXY", "true")
+	t.Setenv("RATE_LIMIT_ENABLED", "false")
+
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected production with RATE_LIMIT_ENABLED=false to be rejected")
+	}
+
+	t.Setenv("RATE_LIMIT_ENABLED", "true")
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("production with rate limiting on should load: %v", err)
 	}
 }

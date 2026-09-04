@@ -86,6 +86,11 @@ type UpdateUserByIDUsecase interface {
 	Execute(ctx context.Context, id string, username, email *string) (*user.User, error)
 }
 
+// DeleteUserByIDUsecase permanently erases an account and everything it owns.
+type DeleteUserByIDUsecase interface {
+	Execute(ctx context.Context, id string) error
+}
+
 // Handlers implements StrictServerInterface. Dependencies are injected feature by feature.
 type Handlers struct {
 	userSvc          UserService
@@ -97,6 +102,7 @@ type Handlers struct {
 	playlistSvc      PlaylistService
 	getUserByIDUC    GetUserByIDUsecase
 	updateUserByIDUC UpdateUserByIDUsecase
+	deleteUserByIDUC DeleteUserByIDUsecase
 	incidentSvc      IncidentService
 	// metricsSvc is optional: nil means no Prometheus is configured and the
 	// supervision endpoint reports incidents without live metrics.
@@ -114,6 +120,7 @@ func NewHandlers(
 	playlistSvc PlaylistService,
 	getUserByIDUC GetUserByIDUsecase,
 	updateUserByIDUC UpdateUserByIDUsecase,
+	deleteUserByIDUC DeleteUserByIDUsecase,
 	incidentSvc IncidentService,
 	metricsSvc MetricsQuerier,
 	logger *slog.Logger,
@@ -128,6 +135,7 @@ func NewHandlers(
 		playlistSvc:      playlistSvc,
 		getUserByIDUC:    getUserByIDUC,
 		updateUserByIDUC: updateUserByIDUC,
+		deleteUserByIDUC: deleteUserByIDUC,
 		incidentSvc:      incidentSvc,
 		metricsSvc:       metricsSvc,
 		logger:           logger,
@@ -530,6 +538,43 @@ func (h *Handlers) UpdateUserByID(ctx context.Context, req UpdateUserByIDRequest
 	}
 
 	return UpdateUserByID200JSONResponse(userToAPI(u)), nil
+}
+
+func (h *Handlers) DeleteUserByID(ctx context.Context, _ DeleteUserByIDRequestObject) (DeleteUserByIDResponseObject, error) {
+	if !h.featureSvc.IsEnabled(ctx, "account_deletion") {
+		return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "account deletion is disabled"}
+	}
+
+	claims, ok := middleware.ClaimsFromContext(ctx)
+	if !ok {
+		return DeleteUserByID401JSONResponse{
+			UnauthorizedJSONResponse: UnauthorizedJSONResponse{Code: 401, Message: "authentication required"},
+		}, nil
+	}
+
+	// Longer than the 5s the other /users/me routes take: this one cascades
+	// across five tables and deletes however many audio objects the account
+	// uploaded, so it is a complex query plus external calls, not a lookup.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	// claims.UserID, never a path or body parameter: the only account a caller
+	// can delete is the one their own token names.
+	if err := h.deleteUserByIDUC.Execute(ctx, claims.UserID); err != nil {
+		// Already gone. The caller wanted the account not to exist, and it
+		// does not — answering 204 keeps a retried delete idempotent.
+		if errors.Is(err, user.ErrNotFound) {
+			return DeleteUserByID204Response{}, nil
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "delete user by id timeout", "route", "DELETE /users/me")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	h.logger.InfoContext(ctx, "account deleted", "route", "DELETE /users/me", "user_id", claims.UserID)
+	return DeleteUserByID204Response{}, nil
 }
 
 func (h *Handlers) FavoriteTrack(ctx context.Context, req FavoriteTrackRequestObject) (FavoriteTrackResponseObject, error) {

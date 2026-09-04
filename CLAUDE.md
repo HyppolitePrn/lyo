@@ -183,6 +183,7 @@ confirmed must not hide a working feature. Add every new flag to both lists.
 | `playlists` | true | Playlist creation and management |
 | `favorites` | true | Favoriting tracks, streams, and playlists |
 | `admin_supervision` | true | Admin supervision dashboard, incident feed and alert notifications |
+| `account_deletion` | true | Self-service account deletion via `DELETE /users/me` |
 | `chat_websocket` | false | Live chat between listeners |
 | `recommendations` | false | Listen-history recommendations |
 | `offline_mode` | false | Playlist caching for offline use |
@@ -206,6 +207,10 @@ Consequences when changing anything deployment-related:
   the WebSocket and webhook endpoints that are outside the OpenAPI contract. Do not add per-handler
   header middleware.
 - `/internal/*` is 404 at the edge. A new infrastructure-only endpoint belongs under that prefix.
+- Track audio has its own vhost, `s3.${LYO_DOMAIN}` → `minio:9000`, with a 200 MB body cap of its
+  own rather than the API's 2 MB. Caddy passes `Host` through unchanged and must keep doing so: a
+  presigned URL is SigV4-signed over its `Host` header, so rewriting it invalidates every signature.
+  `S3_PUBLIC_ENDPOINT` must therefore name that vhost, and `S3_ENDPOINT` the Compose-internal one.
 - New WebSocket routes are covered by the `@websocket` matcher and bypass the 2 MB request-body cap;
   anything else must fit under it (audio never transits the API — presigned S3 upload, ADR 010).
 - `TRUSTED_PROXY=true` is what allows `X-Forwarded-For` to be believed. `APP_ENV=production` refuses to
@@ -214,6 +219,40 @@ Consequences when changing anything deployment-related:
   only), and the release workflow fails if `VPS_URL` is not `https://`.
 
 See [ADR 012](docs/adr/012-tls-reverse-proxy.md).
+
+---
+
+## Rate Limiting
+
+`pkg/middleware.RateLimit` throttles by client address ahead of every handler,
+in two tiers: a general quota and a much tighter one for `/auth/*`. `/health`
+and `/internal/*` are exempt.
+
+- The key is `r.RemoteAddr`, which is only the real caller because chi's
+  `RealIP` rewrote it — and main.go installs `RealIP` **only** when
+  `TRUSTED_PROXY` is set. Never key a limit on a header directly.
+- It is mounted before `Recoverer`/`Authenticate` on purpose: a throttled
+  request must be rejected before it reaches the DB pool or a bcrypt compare.
+- A rejected call answers 429 in the API's `{code, message}` shape with
+  `Retry-After`.
+- Buckets are per-process. A second replica doubles the effective quota; that
+  is a known trade-off, not an oversight (ADR 013).
+
+See [ADR 013](docs/adr/013-rate-limiting-and-account-deletion.md).
+
+---
+
+## Account Deletion — Audio Before Row
+
+`DELETE /users/me` erases the account named by the **caller's own JWT**, never
+a path or body parameter. `usecase.DeleteUserByIDUsecase` purges the
+broadcaster's S3 objects *before* deleting the user row, and the order is load-
+bearing: every table referencing `users` cascades, so once the row is gone the
+track rows that named those objects are gone too, and the audio is
+unreachable personal data. Failing on storage first merely leaves a retryable
+account.
+
+`user.ErrNotFound` answers 204, so a retried delete stays idempotent.
 
 ---
 
@@ -286,7 +325,12 @@ Non-trivial architectural choices are recorded in `docs/adr/` as numbered markdo
 
 All config via env vars — use `pkg/config/config.go`, never hardcode. See `.env.example` for the full list.
 
-Key vars: `DATABASE_URL`, `JWT_SECRET` (min 32 chars), `SERVER_PORT` (default 8080), `STREAM_BUFFER_SIZE`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`.
+Key vars: `DATABASE_URL`, `JWT_SECRET` (min 32 chars), `SERVER_PORT` (default 8080), `STREAM_BUFFER_SIZE`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `RATE_LIMIT_*`.
+
+`config.validate()` is the place where a deployment is refused rather than
+started wrong: `APP_ENV=production` requires both `TRUSTED_PROXY=true` and
+`RATE_LIMIT_ENABLED=true`. Add a check there, not a runtime warning, whenever
+a setting is unsafe in production.
 
 ---
 

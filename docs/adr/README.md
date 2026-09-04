@@ -18,6 +18,7 @@ record.
 | [010](010-s3-presigned-upload.md) | Presigned S3 uploads | Accepted | Audio bytes never transit the API |
 | [011](011-alerting-incidents.md) | Alerts become incidents owned by the platform | Accepted | Durable, acknowledgeable alerting; technical vs. experience families |
 | [012](012-tls-reverse-proxy.md) | TLS terminated at a Caddy reverse proxy | Accepted | One public port, role-bearing tokens never travel in clear |
+| [013](013-rate-limiting-and-account-deletion.md) | Per-address rate limiting in the app; account deletion erases audio first | Accepted | Credential guessing is throttled; a deleted account leaves no orphaned audio |
 
 **Reading the set.** ADR 002 and 004 are best read together: they are the project's clearest worked
 example of a decision made, evaluated in practice, and deliberately reversed with the reasoning written

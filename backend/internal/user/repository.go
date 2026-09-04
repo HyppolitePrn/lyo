@@ -24,6 +24,10 @@ type Repository interface {
 	// Update applies a partial update: nil fields are left untouched.
 	Update(ctx context.Context, id string, username, email *string) (*User, error)
 	UpdatePassword(ctx context.Context, id, passwordHash string) error
+	// Delete removes the account. Every table referencing users does so with
+	// ON DELETE CASCADE, so this erases the user's streams, tracks, playlists
+	// and password reset tokens in the same statement.
+	Delete(ctx context.Context, id string) error
 
 	AddFavoriteTrack(ctx context.Context, userID, trackID string) error
 	RemoveFavoriteTrack(ctx context.Context, userID, trackID string) error
@@ -122,6 +126,22 @@ func (r *pgRepo) UpdatePassword(ctx context.Context, id, passwordHash string) er
 	const q = `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`
 
 	tag, err := r.pool.Exec(ctx, q, id, passwordHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *pgRepo) Delete(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbQueryTimeout)
+	defer cancel()
+
+	const q = `DELETE FROM users WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, q, id)
 	if err != nil {
 		return err
 	}
