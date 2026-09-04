@@ -1338,6 +1338,29 @@ func (h *Handlers) RemoveTrackFromPlaylist(ctx context.Context, req RemoveTrackF
 	return RemoveTrackFromPlaylist200JSONResponse(apiPlaylist), nil
 }
 
+// GetPublicFeatureFlags serves the flag states clients need to gate their own
+// UI. It is deliberately unauthenticated — the app reads it before login — and
+// returns names and states only, never descriptions or timestamps.
+func (h *Handlers) GetPublicFeatureFlags(ctx context.Context, _ GetPublicFeatureFlagsRequestObject) (GetPublicFeatureFlagsResponseObject, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	flags, err := h.featureSvc.All(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.logger.WarnContext(ctx, "list public feature flags timeout", "route", "GET /features")
+			return nil, &HTTPError{Code: http.StatusServiceUnavailable, Msg: "request timeout"}
+		}
+		return nil, err
+	}
+
+	states := make(PublicFeatureFlags, len(flags))
+	for i := range flags {
+		states[flags[i].Name] = flags[i].Enabled
+	}
+	return GetPublicFeatureFlags200JSONResponse(states), nil
+}
+
 func (h *Handlers) ListFeatureFlags(ctx context.Context, _ ListFeatureFlagsRequestObject) (ListFeatureFlagsResponseObject, error) {
 	claims, ok := middleware.ClaimsFromContext(ctx)
 	if !ok || !claims.Role.AtLeast(auth.RoleAdmin) {

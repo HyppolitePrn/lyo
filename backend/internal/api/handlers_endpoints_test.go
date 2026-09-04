@@ -1776,3 +1776,34 @@ func TestListFavorites_NonUUIDTargetIs500(t *testing.T) {
 		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body)
 	}
 }
+
+// The mobile client tells a disabled feature apart from the other causes of a
+// 503 (timeouts, outages) by the message suffix, and re-syncs its flags when it
+// sees one. Rewording a gate here without updating mobile/lib/core/api breaks
+// that, so pin the shape.
+func TestFeatureGates_MessageEndsWithDisabled(t *testing.T) {
+	cases := []struct {
+		flag, method, path, body string
+		role                     auth.Role
+	}{
+		{"track_uploads", http.MethodPost, "/tracks/upload-url", `{"filename":"x.mp3"}`, auth.RoleBroadcaster},
+		{"live_streaming", http.MethodPost, "/streams", `{"title":"x"}`, auth.RoleBroadcaster},
+		{"favorites", http.MethodGet, "/users/me/favorites", "", auth.RoleUser},
+		{"playlists", http.MethodGet, "/playlists", "", auth.RoleUser},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.flag, func(t *testing.T) {
+			f := newFixture(t, tc.flag)
+			w := f.do(t, tc.method, tc.path, f.token(t, uuid.NewString(), tc.role), tc.body)
+
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+			}
+			msg := strings.ToLower(strings.TrimSpace(w.Body.String()))
+			if !strings.HasSuffix(msg, "disabled") {
+				t.Fatalf("message = %q, want it to end with \"disabled\"", msg)
+			}
+		})
+	}
+}

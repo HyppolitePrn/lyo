@@ -245,6 +245,13 @@ components:
       properties:
         enabled: { type: boolean }
 
+    # Flag name to enabled state, e.g. {"live_streaming": true}. Clients read
+    # this to decide which parts of their UI to show; it carries no metadata so
+    # it can safely be served to anonymous callers.
+    PublicFeatureFlags:
+      type: object
+      additionalProperties: { type: boolean }
+
     # ── Admin: Supervision ────────────────────────────────────────────────────
     IncidentSeverity:
       type: string
@@ -983,6 +990,23 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ── Feature Flags ───────────────────────────────────────────────────────────
+  /features:
+    get:
+      operationId: GetPublicFeatureFlags
+      summary: Feature flags and their state, for client-side UI gating
+      description: >
+        Open to anonymous callers: clients need their flags before login to know
+        which sign-in options and tabs to render. Exposes only name and state.
+      tags: [features]
+      responses:
+        "200":
+          description: Flag name to enabled state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicFeatureFlags' }
         "503": { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ── Admin: Feature Flags ────────────────────────────────────────────────────

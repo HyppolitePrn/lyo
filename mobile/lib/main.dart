@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
+import 'core/api/api_client.dart';
 import 'core/deep_links/deep_link_listener.dart';
 import 'core/features/feature_flags_provider.dart';
 import 'core/router/app_router.dart';
@@ -64,10 +65,20 @@ Future<void> main() async {
     initialLocation: restored ? '/home' : '/splash',
   );
 
+  // Not awaited: the UI renders on FeatureFlags.defaults straight away and
+  // rebuilds when the server answers, so a slow network delays no startup.
+  final flags = FeatureFlags();
+  unawaited(flags.load());
+
+  // A 503 "… is disabled" means an admin flipped a flag while the app was
+  // running, so our cached flags are stale: re-sync and let the UI drop the
+  // feature instead of offering an action that keeps failing.
+  onFeatureDisabled = () => unawaited(flags.load());
+
   runApp(
     MultiProvider(
       providers: [
-        Provider<FeatureFlags>(create: (_) => const FeatureFlags()),
+        ChangeNotifierProvider<FeatureFlags>.value(value: flags),
         ChangeNotifierProvider.value(value: auth),
         ChangeNotifierProvider(create: (_) => HomeNotifier()),
         ChangeNotifierProvider.value(value: volume),

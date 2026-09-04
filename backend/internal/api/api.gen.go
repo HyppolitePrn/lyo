@@ -307,6 +307,9 @@ type PresignedUploadResponse struct {
 	UploadUrl string `json:"upload_url"`
 }
 
+// PublicFeatureFlags defines model for PublicFeatureFlags.
+type PublicFeatureFlags map[string]bool
+
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
@@ -540,6 +543,9 @@ type ServerInterface interface {
 	// Reset password using a token from the reset email
 	// (POST /auth/reset-password)
 	ResetPassword(w http.ResponseWriter, r *http.Request)
+	// Feature flags and their state, for client-side UI gating
+	// (GET /features)
+	GetPublicFeatureFlags(w http.ResponseWriter, r *http.Request)
 	// Health check
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -681,6 +687,12 @@ func (_ Unimplemented) Register(w http.ResponseWriter, r *http.Request) {
 // Reset password using a token from the reset email
 // (POST /auth/reset-password)
 func (_ Unimplemented) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Feature flags and their state, for client-side UI gating
+// (GET /features)
+func (_ Unimplemented) GetPublicFeatureFlags(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1053,6 +1065,20 @@ func (siw *ServerInterfaceWrapper) ResetPassword(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ResetPassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPublicFeatureFlags operation middleware
+func (siw *ServerInterfaceWrapper) GetPublicFeatureFlags(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPublicFeatureFlags(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1912,6 +1938,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/auth/reset-password", wrapper.ResetPassword)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/features", wrapper.GetPublicFeatureFlags)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/health", wrapper.GetHealth)
 	})
 	r.Group(func(r chi.Router) {
@@ -2353,6 +2382,31 @@ type ResetPassword400JSONResponse struct{ BadRequestJSONResponse }
 func (response ResetPassword400JSONResponse) VisitResetPasswordResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetPublicFeatureFlagsRequestObject struct {
+}
+
+type GetPublicFeatureFlagsResponseObject interface {
+	VisitGetPublicFeatureFlagsResponse(w http.ResponseWriter) error
+}
+
+type GetPublicFeatureFlags200JSONResponse PublicFeatureFlags
+
+func (response GetPublicFeatureFlags200JSONResponse) VisitGetPublicFeatureFlagsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetPublicFeatureFlags503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetPublicFeatureFlags503JSONResponse) VisitGetPublicFeatureFlagsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3210,6 +3264,9 @@ type StrictServerInterface interface {
 	// Reset password using a token from the reset email
 	// (POST /auth/reset-password)
 	ResetPassword(ctx context.Context, request ResetPasswordRequestObject) (ResetPasswordResponseObject, error)
+	// Feature flags and their state, for client-side UI gating
+	// (GET /features)
+	GetPublicFeatureFlags(ctx context.Context, request GetPublicFeatureFlagsRequestObject) (GetPublicFeatureFlagsResponseObject, error)
 	// Health check
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -3607,6 +3664,30 @@ func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ResetPasswordResponseObject); ok {
 		if err := validResponse.VisitResetPasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPublicFeatureFlags operation middleware
+func (sh *strictHandler) GetPublicFeatureFlags(w http.ResponseWriter, r *http.Request) {
+	var request GetPublicFeatureFlagsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPublicFeatureFlags(ctx, request.(GetPublicFeatureFlagsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPublicFeatureFlags")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPublicFeatureFlagsResponseObject); ok {
+		if err := validResponse.VisitGetPublicFeatureFlagsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -22,8 +22,31 @@ class ApiException implements Exception {
   final int statusCode;
   final String message;
 
+  /// True when the server refused because a feature flag is off, as opposed to
+  /// the other things that answer 503 (a request timeout, a database outage).
+  /// Every feature gate in `internal/api/handlers.go` phrases its message as
+  /// `<subject> is/are disabled`; the suffix is the contract.
+  bool get isFeatureDisabled =>
+      statusCode == 503 && message.toLowerCase().endsWith('disabled');
+
   @override
   String toString() => message;
+}
+
+/// Called whenever the server rejects a call because a feature flag is off.
+/// Reaching this point means the client's cached flags are stale, so the app
+/// wires this to [FeatureFlags.load] in `main.dart` to re-sync and stop
+/// offering the feature. Left null in tests, which make no network calls.
+void Function()? onFeatureDisabled;
+
+// Builds the exception for a failed response and, when the cause is a disabled
+// feature, nudges the app to refresh its flags.
+ApiException _errorFor(int statusCode, dynamic decoded) {
+  final e = ApiException(statusCode, _extractError(decoded, statusCode));
+  if (e.isFeatureDisabled) {
+    onFeatureDisabled?.call();
+  }
+  return e;
 }
 
 Map<String, String> _authHeaders(String? token) => {
@@ -58,8 +81,7 @@ class ApiClient {
 
       final decoded = jsonDecode(response.body);
       if (response.statusCode >= 400) {
-        throw ApiException(
-            response.statusCode, _extractError(decoded, response.statusCode));
+        throw _errorFor(response.statusCode, decoded);
       }
       return decoded as Map<String, dynamic>;
     } on ApiException {
@@ -89,8 +111,7 @@ class ApiClient {
 
       final decoded = jsonDecode(response.body);
       if (response.statusCode >= 400) {
-        throw ApiException(
-            response.statusCode, _extractError(decoded, response.statusCode));
+        throw _errorFor(response.statusCode, decoded);
       }
       return decoded as Map<String, dynamic>;
     } on ApiException {
@@ -115,8 +136,7 @@ class ApiClient {
       if (response.statusCode >= 400) {
         final decoded =
             response.body.isNotEmpty ? jsonDecode(response.body) : null;
-        throw ApiException(
-            response.statusCode, _extractError(decoded, response.statusCode));
+        throw _errorFor(response.statusCode, decoded);
       }
     } on ApiException {
       rethrow;
@@ -137,8 +157,7 @@ class ApiClient {
 
       final decoded = jsonDecode(response.body);
       if (response.statusCode >= 400) {
-        throw ApiException(
-            response.statusCode, _extractError(decoded, response.statusCode));
+        throw _errorFor(response.statusCode, decoded);
       }
       return decoded;
     } on ApiException {
@@ -161,8 +180,7 @@ class ApiClient {
       if (response.statusCode >= 400) {
         final decoded =
             response.body.isNotEmpty ? jsonDecode(response.body) : null;
-        throw ApiException(
-            response.statusCode, _extractError(decoded, response.statusCode));
+        throw _errorFor(response.statusCode, decoded);
       }
     } on ApiException {
       rethrow;

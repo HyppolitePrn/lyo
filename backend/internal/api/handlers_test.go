@@ -943,3 +943,51 @@ func TestToggleFeatureFlagHandler_NotFound(t *testing.T) {
 		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body)
 	}
 }
+
+// ── GetPublicFeatureFlags ───────────────────────────────────────────────────
+
+// The client reads its flags before login, so an anonymous caller must get a
+// plain name-to-state map — no id, description or timestamp.
+func TestGetPublicFeatureFlagsHandler_AnonymousSucceeds(t *testing.T) {
+	authSvc := newTestAuthSvc()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	featureSvc := &mockFeatureSvc{
+		allFn: func(_ context.Context) ([]features.Flag, error) {
+			return []features.Flag{
+				{ID: uuid.New().String(), Name: "live_streaming", Enabled: true, Description: "live", UpdatedAt: now},
+				{ID: uuid.New().String(), Name: "chat_websocket", Enabled: false, Description: "chat", UpdatedAt: now},
+			}, nil
+		},
+	}
+
+	w := get(t, newTestRouterWithFeatureSvc(authSvc, featureSvc), "/features", "")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+	}
+	var got map[string]bool
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 2 || !got["live_streaming"] || got["chat_websocket"] {
+		t.Fatalf("unexpected flag map: %+v", got)
+	}
+	if strings.Contains(w.Body.String(), "description") {
+		t.Fatalf("public payload leaks flag metadata: %s", w.Body)
+	}
+}
+
+func TestGetPublicFeatureFlagsHandler_TimeoutIs503(t *testing.T) {
+	featureSvc := &mockFeatureSvc{
+		allFn: func(context.Context) ([]features.Flag, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+
+	w := get(t, newTestRouterWithFeatureSvc(newTestAuthSvc(), featureSvc), "/features", "")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
+	}
+}
