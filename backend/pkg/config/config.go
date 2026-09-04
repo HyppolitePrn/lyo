@@ -18,6 +18,8 @@ type Config struct {
 	Stream   StreamConfig
 	Mail     MailConfig
 	S3       S3Config
+	// RateLimit throttles callers by address. See RateLimitConfig.
+	RateLimit RateLimitConfig
 }
 
 type ServerConfig struct {
@@ -35,6 +37,24 @@ type ServerConfig struct {
 	// The mobile client is unaffected (CORS is a browser rule), so in
 	// production this only needs the web front-end's own origin.
 	CORSAllowedOrigins []string
+}
+
+// RateLimitConfig caps how often one client address may call the API.
+//
+// Two tiers: Requests/Window applies to the API at large, and
+// AuthRequests/AuthWindow replaces it on the credential endpoints under
+// /auth/, where repeated guessing is the whole attack. A tier with zero
+// requests or a zero window is unlimited, so an unset variable widens the
+// limit rather than taking the API offline.
+//
+// Meaningful only when the client address is trustworthy — see
+// ServerConfig.TrustedProxy.
+type RateLimitConfig struct {
+	Enabled      bool
+	Requests     int
+	Window       time.Duration
+	AuthRequests int
+	AuthWindow   time.Duration
 }
 
 type DatabaseConfig struct {
@@ -152,6 +172,15 @@ func Load() (*Config, error) {
 			Endpoint:        getEnv("S3_ENDPOINT", ""),
 			PublicEndpoint:  getEnv("S3_PUBLIC_ENDPOINT", ""),
 		},
+		RateLimit: RateLimitConfig{
+			Enabled:  getBool("RATE_LIMIT_ENABLED", true),
+			Requests: getInt("RATE_LIMIT_REQUESTS", 120),
+			Window:   getDuration("RATE_LIMIT_WINDOW", time.Minute),
+			// Ten sign-in attempts a minute is far above what a person with a
+			// password manager needs and far below what guessing one requires.
+			AuthRequests: getInt("RATE_LIMIT_AUTH_REQUESTS", 10),
+			AuthWindow:   getDuration("RATE_LIMIT_AUTH_WINDOW", time.Minute),
+		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -172,6 +201,9 @@ func (c *Config) validate() error {
 	}
 	if c.Obs.Environment == "production" && !c.Server.TrustedProxy {
 		return fmt.Errorf("production requires TRUSTED_PROXY=true: the API must be served through the TLS reverse proxy, never exposed directly")
+	}
+	if c.Obs.Environment == "production" && !c.RateLimit.Enabled {
+		return fmt.Errorf("production requires RATE_LIMIT_ENABLED=true: without it the credential endpoints accept unlimited guesses")
 	}
 	return nil
 }
