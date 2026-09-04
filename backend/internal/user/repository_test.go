@@ -266,3 +266,40 @@ func TestRepoFavorite_PropagatesExecError(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, sentinel)
 	}
 }
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+func TestRepositoryDelete_RemovesTheRow(t *testing.T) {
+	mock := newMockPool(t)
+	mock.ExpectExec("DELETE FROM users").
+		WithArgs("user-1").
+		WillReturnResult(pgxmock.NewResult("DELETE", 1))
+
+	if err := user.NewRepository(mock).Delete(context.Background(), "user-1"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
+// Nothing deleted means the account was not there — the caller needs to be
+// able to tell that apart from a successful erase.
+func TestRepositoryDelete_MissingUserIsErrNotFound(t *testing.T) {
+	mock := newMockPool(t)
+	mock.ExpectExec("DELETE FROM users").
+		WithArgs("ghost").
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+
+	err := user.NewRepository(mock).Delete(context.Background(), "ghost")
+	if !errors.Is(err, user.ErrNotFound) {
+		t.Fatalf("err = %v, want %v", err, user.ErrNotFound)
+	}
+}
+
+func TestRepositoryDelete_PropagatesDriverError(t *testing.T) {
+	sentinel := errors.New("db down")
+	mock := newMockPool(t)
+	mock.ExpectExec("DELETE FROM users").WithArgs("user-1").WillReturnError(sentinel)
+
+	if err := user.NewRepository(mock).Delete(context.Background(), "user-1"); !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want %v", err, sentinel)
+	}
+}

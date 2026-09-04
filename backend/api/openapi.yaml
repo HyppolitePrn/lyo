@@ -379,6 +379,14 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: >
+        Rate limit exceeded. Enforced by middleware ahead of every handler, so
+        any endpoint may answer it; `Retry-After` carries the wait in seconds.
+        The credential endpoints under /auth/ have their own, much tighter quota.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
 security: []
 
@@ -520,6 +528,23 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "422": { $ref: '#/components/responses/UnprocessableEntity' }
+    delete:
+      operationId: DeleteUserByID
+      summary: Permanently delete the authenticated user's account
+      description: >
+        Erases the account and everything that references it — streams, tracks
+        (including their audio objects in S3), playlists, password reset tokens
+        — and cannot be undone. A caller may only ever delete themselves: the
+        subject is the JWT's own user, never a path parameter.
+      tags: [users]
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Account deleted
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
 
   /users/me/favorites:
     get:

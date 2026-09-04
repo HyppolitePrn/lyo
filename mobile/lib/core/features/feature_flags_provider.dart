@@ -58,5 +58,6 @@ class FeatureFlags extends ChangeNotifier {
     'playlists': true,
     'favorites': true,
     'admin_supervision': true,
+    'account_deletion': true,
   };
 }

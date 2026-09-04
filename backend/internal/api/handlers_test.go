@@ -186,7 +186,7 @@ func newTestRouter(
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(authSvc))
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, nopTrackSvc{}, nopPlaylistSvc{}, getUserByIDUC, updateUserByIDUC, nil, nil,
+		api.NewHandlers(userSvc, authSvc, nopStreamSvc{}, nopFeatureSvc{}, pwResetSvc, nopTrackSvc{}, nopPlaylistSvc{}, getUserByIDUC, updateUserByIDUC, nil, nil, nil,
 			slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
@@ -210,7 +210,7 @@ func newTestRouterWithFeatureSvc(authSvc *auth.Service, featureSvc api.FeatureSe
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(authSvc))
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(nil, authSvc, nopStreamSvc{}, featureSvc, nil, nopTrackSvc{}, nopPlaylistSvc{}, nil, nil, nil, nil,
+		api.NewHandlers(nil, authSvc, nopStreamSvc{}, featureSvc, nil, nopTrackSvc{}, nopPlaylistSvc{}, nil, nil, nil, nil, nil,
 			slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{

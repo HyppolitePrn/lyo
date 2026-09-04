@@ -15,6 +15,10 @@ type mockRepo struct {
 	getFn    func(ctx context.Context, id string) (*track.Track, error)
 	listFn   func(ctx context.Context, broadcasterID string, page, limit int) ([]track.Track, error)
 	deleteFn func(ctx context.Context, id, requesterID string) (*track.Track, error)
+
+	purged            []track.Track
+	purgeErr          error
+	purgedBroadcaster string
 }
 
 func (m *mockRepo) Create(ctx context.Context, broadcasterID, title, artist, audioURL string, durationSeconds int) (*track.Track, error) {
@@ -25,6 +29,10 @@ func (m *mockRepo) Get(ctx context.Context, id string) (*track.Track, error) {
 }
 func (m *mockRepo) List(ctx context.Context, broadcasterID string, page, limit int) ([]track.Track, error) {
 	return m.listFn(ctx, broadcasterID, page, limit)
+}
+func (m *mockRepo) DeleteByBroadcaster(_ context.Context, broadcasterID string) ([]track.Track, error) {
+	m.purgedBroadcaster = broadcasterID
+	return m.purged, m.purgeErr
 }
 func (m *mockRepo) Delete(ctx context.Context, id, requesterID string) (*track.Track, error) {
 	return m.deleteFn(ctx, id, requesterID)
@@ -222,5 +230,82 @@ func TestPresignUpload_PropagatesStorageError(t *testing.T) {
 
 	if _, _, _, err := svc.PresignUpload(context.Background(), "bc-1", "x.mp3"); !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want %v", err, sentinel)
+	}
+}
+
+// ── PurgeByBroadcaster ────────────────────────────────────────────────────────
+
+func TestPurgeByBroadcaster_DeletesEveryAudioObject(t *testing.T) {
+	repo := &mockRepo{purged: []track.Track{
+		{ID: "t-1", AudioURL: "https://bucket.s3.region.amazonaws.com/tracks/b-1/a.mp3"},
+		{ID: "t-2", AudioURL: "https://bucket.s3.region.amazonaws.com/tracks/b-1/b.mp3"},
+	}}
+	var deleted []string
+	store := &mockStorage{deleteFn: func(_ context.Context, key string) error {
+		deleted = append(deleted, key)
+		return nil
+	}}
+
+	if err := track.NewService(repo, store).PurgeByBroadcaster(context.Background(), "b-1"); err != nil {
+		t.Fatalf("PurgeByBroadcaster: %v", err)
+	}
+
+	if repo.purgedBroadcaster != "b-1" {
+		t.Fatalf("purged %q, want %q", repo.purgedBroadcaster, "b-1")
+	}
+	want := []string{"tracks/b-1/a.mp3", "tracks/b-1/b.mp3"}
+	if len(deleted) != len(want) || deleted[0] != want[0] || deleted[1] != want[1] {
+		t.Fatalf("deleted %v, want %v", deleted, want)
+	}
+}
+
+// A track whose audio_url points somewhere we do not own is skipped, not
+// deleted by key against our own bucket.
+func TestPurgeByBroadcaster_SkipsForeignURLs(t *testing.T) {
+	repo := &mockRepo{purged: []track.Track{{ID: "t-1", AudioURL: "https://elsewhere.example/x.mp3"}}}
+	store := &mockStorage{deleteFn: func(context.Context, string) error {
+		t.Fatal("a foreign URL must not be deleted from our bucket")
+		return nil
+	}}
+
+	if err := track.NewService(repo, store).PurgeByBroadcaster(context.Background(), "b-1"); err != nil {
+		t.Fatalf("PurgeByBroadcaster: %v", err)
+	}
+}
+
+// One unreachable object must not strand the rest: every remaining object is
+// still attempted, and the failure is still reported.
+func TestPurgeByBroadcaster_ContinuesPastAFailedObject(t *testing.T) {
+	repo := &mockRepo{purged: []track.Track{
+		{ID: "t-1", AudioURL: "https://bucket.s3.region.amazonaws.com/a.mp3"},
+		{ID: "t-2", AudioURL: "https://bucket.s3.region.amazonaws.com/b.mp3"},
+		{ID: "t-3", AudioURL: "https://bucket.s3.region.amazonaws.com/c.mp3"},
+	}}
+	boom := errors.New("s3 down")
+	var attempted []string
+	store := &mockStorage{deleteFn: func(_ context.Context, key string) error {
+		attempted = append(attempted, key)
+		if key == "a.mp3" {
+			return boom
+		}
+		return nil
+	}}
+
+	err := track.NewService(repo, store).PurgeByBroadcaster(context.Background(), "b-1")
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want it to wrap %v", err, boom)
+	}
+	if len(attempted) != 3 {
+		t.Fatalf("attempted %v, want all three objects tried", attempted)
+	}
+}
+
+func TestPurgeByBroadcaster_PropagatesRepoError(t *testing.T) {
+	boom := errors.New("db down")
+	repo := &mockRepo{purgeErr: boom}
+
+	err := track.NewService(repo, &mockStorage{}).PurgeByBroadcaster(context.Background(), "b-1")
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want %v", err, boom)
 	}
 }

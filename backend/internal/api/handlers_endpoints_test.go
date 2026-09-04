@@ -252,6 +252,17 @@ func (f flagSvc) Toggle(_ context.Context, _ string, _ bool) (*features.Flag, er
 	return nil, errors.New("not implemented")
 }
 
+// fakeDeleteUserUC records the account it was asked to erase.
+type fakeDeleteUserUC struct {
+	err       error
+	deletedID string
+}
+
+func (f *fakeDeleteUserUC) Execute(_ context.Context, id string) error {
+	f.deletedID = id
+	return f.err
+}
+
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
 type fixture struct {
@@ -264,6 +275,7 @@ type fixture struct {
 	flags     flagSvc
 	incidents *fakeIncidentSvc
 	metrics   *fakeMetrics
+	delUser   *fakeDeleteUserUC
 }
 
 func newFixture(t *testing.T, disabledFlags ...string) *fixture {
@@ -282,12 +294,13 @@ func newFixture(t *testing.T, disabledFlags ...string) *fixture {
 		flags:     flagSvc{off: off},
 		incidents: &fakeIncidentSvc{},
 		metrics:   &fakeMetrics{},
+		delUser:   &fakeDeleteUserUC{},
 	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Authenticate(f.authSvc))
 	strict := api.NewStrictHandlerWithOptions(
-		api.NewHandlers(f.users, f.authSvc, f.streams, f.flags, nil, f.tracks, f.playlist, nil, nil,
+		api.NewHandlers(f.users, f.authSvc, f.streams, f.flags, nil, f.tracks, f.playlist, nil, nil, f.delUser,
 			f.incidents, f.metrics, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		nil,
 		api.StrictHTTPServerOptions{
@@ -1790,6 +1803,7 @@ func TestFeatureGates_MessageEndsWithDisabled(t *testing.T) {
 		{"live_streaming", http.MethodPost, "/streams", `{"title":"x"}`, auth.RoleBroadcaster},
 		{"favorites", http.MethodGet, "/users/me/favorites", "", auth.RoleUser},
 		{"playlists", http.MethodGet, "/playlists", "", auth.RoleUser},
+		{"account_deletion", http.MethodDelete, "/users/me", "", auth.RoleUser},
 	}
 
 	for _, tc := range cases {
@@ -1805,5 +1819,75 @@ func TestFeatureGates_MessageEndsWithDisabled(t *testing.T) {
 				t.Fatalf("message = %q, want it to end with \"disabled\"", msg)
 			}
 		})
+	}
+}
+
+// ── DELETE /users/me ──────────────────────────────────────────────────────────
+
+func TestDeleteUserByID_ErasesTheCallersOwnAccount(t *testing.T) {
+	f := newFixture(t)
+	id := uuid.NewString()
+
+	w := f.do(t, http.MethodDelete, "/users/me", f.token(t, id, auth.RoleUser), "")
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", w.Code, w.Body)
+	}
+	// The subject comes from the token, never from the request — this is what
+	// keeps "delete my account" from becoming "delete an account".
+	if f.delUser.deletedID != id {
+		t.Fatalf("deleted %q, want the caller %q", f.delUser.deletedID, id)
+	}
+}
+
+func TestDeleteUserByID_RequiresAuthentication(t *testing.T) {
+	f := newFixture(t)
+
+	w := f.do(t, http.MethodDelete, "/users/me", "", "")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401: %s", w.Code, w.Body)
+	}
+	if f.delUser.deletedID != "" {
+		t.Fatalf("an anonymous request deleted %q", f.delUser.deletedID)
+	}
+}
+
+// An admin deleting themselves is still only deleting themselves: the role
+// changes nothing about which account the handler picks.
+func TestDeleteUserByID_AdminStillOnlyDeletesItself(t *testing.T) {
+	f := newFixture(t)
+	id := uuid.NewString()
+
+	w := f.do(t, http.MethodDelete, "/users/me", f.token(t, id, auth.RoleAdmin), "")
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", w.Code, w.Body)
+	}
+	if f.delUser.deletedID != id {
+		t.Fatalf("deleted %q, want %q", f.delUser.deletedID, id)
+	}
+}
+
+// Retrying a delete that already succeeded must not look like a failure.
+func TestDeleteUserByID_IsIdempotent(t *testing.T) {
+	f := newFixture(t)
+	f.delUser.err = user.ErrNotFound
+
+	w := f.do(t, http.MethodDelete, "/users/me", f.token(t, uuid.NewString(), auth.RoleUser), "")
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", w.Code, w.Body)
+	}
+}
+
+func TestDeleteUserByID_TimeoutIs503(t *testing.T) {
+	f := newFixture(t)
+	f.delUser.err = context.DeadlineExceeded
+
+	w := f.do(t, http.MethodDelete, "/users/me", f.token(t, uuid.NewString(), auth.RoleUser), "")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", w.Code, w.Body)
 	}
 }

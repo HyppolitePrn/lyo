@@ -69,6 +69,32 @@ func (s *Service) DeleteTrack(ctx context.Context, id, requesterID string) error
 	return nil
 }
 
+// PurgeByBroadcaster deletes every track owned by broadcasterID along with its
+// audio object. It backs account deletion: the tracks rows would cascade away
+// with the user anyway, but the S3 objects they point at would not, and an
+// orphaned object is personal data nobody can reach to erase.
+//
+// Object deletions are best-effort in aggregate: one failure does not abandon
+// the rest, and the first error is returned once every object has been tried.
+func (s *Service) PurgeByBroadcaster(ctx context.Context, broadcasterID string) error {
+	tracks, err := s.repo.DeleteByBroadcaster(ctx, broadcasterID)
+	if err != nil {
+		return err
+	}
+
+	var firstErr error
+	for _, t := range tracks {
+		key, ok := s.storage.KeyFromURL(t.AudioURL)
+		if !ok {
+			continue
+		}
+		if err := s.storage.Delete(ctx, key); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("delete s3 object %q: %w", key, err)
+		}
+	}
+	return firstErr
+}
+
 // PresignUpload generates a fresh S3 object key scoped to the broadcaster and
 // returns a presigned PUT URL for it, plus the public URL the caller should
 // use as audio_url once the upload completes.

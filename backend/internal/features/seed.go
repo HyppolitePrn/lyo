@@ -12,4 +12,5 @@ var Seeds = []Flag{
 	{Name: "playlists", Enabled: true, Description: "Playlist creation and management"},
 	{Name: "favorites", Enabled: true, Description: "Favoriting tracks, streams, and playlists"},
 	{Name: "admin_supervision", Enabled: true, Description: "Admin supervision dashboard, incident feed and alert notifications"},
+	{Name: "account_deletion", Enabled: true, Description: "Self-service account deletion via DELETE /users/me"},
 }

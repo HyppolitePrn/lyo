@@ -145,6 +145,9 @@ func main() {
 	}
 	trackRepo := track.NewRepository(pool)
 	trackSvc := track.NewService(trackRepo, s3Storage)
+	// Declared here rather than next to the other user usecases: erasing an
+	// account also erases the audio it uploaded, so it needs the track service.
+	deleteUserByIDUC := userusecase.NewDeleteUserByIDUsecase(userRepo, trackSvc)
 	playlistRepo := playlist.NewRepository(pool)
 	playlistSvc := playlist.NewService(playlistRepo)
 
@@ -169,6 +172,21 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+	// Ahead of everything that costs anything — a throttled request must be
+	// rejected before it reaches a DB pool or a bcrypt comparison, which is
+	// the resource the limit is protecting in the first place. It sits after
+	// RealIP so that the key is the caller, not the proxy.
+	r.Use(middleware.RateLimit(middleware.RateLimitConfig{
+		Enabled: cfg.RateLimit.Enabled,
+		Default: middleware.RateLimitPolicy{
+			Requests: cfg.RateLimit.Requests,
+			Window:   cfg.RateLimit.Window,
+		},
+		Auth: middleware.RateLimitPolicy{
+			Requests: cfg.RateLimit.AuthRequests,
+			Window:   cfg.RateLimit.AuthWindow,
+		},
+	}))
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.Trace(cfg.Obs.ServiceName))
@@ -178,7 +196,8 @@ func main() {
 	// Mount generated API routes
 	strict := api.NewStrictHandlerWithOptions(
 		api.NewHandlers(userSvc, authSvc, streamSvc, featSvc, pwResetSvc, trackSvc, playlistSvc,
-			getUserByIDUC, updateUserByIDUC, incidentSvc, metricsQuerier(promClient), logger),
+			getUserByIDUC, updateUserByIDUC, deleteUserByIDUC, incidentSvc,
+			metricsQuerier(promClient), logger),
 		nil,
 		api.StrictHTTPServerOptions{
 			ResponseErrorHandlerFunc: handleResponseError,

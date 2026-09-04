@@ -22,6 +22,9 @@ type Repository interface {
 	List(ctx context.Context, broadcasterID string, page, limit int) ([]Track, error)
 	// Delete removes the track and returns it. If requesterID is non-empty, enforces ownership.
 	Delete(ctx context.Context, id, requesterID string) (*Track, error)
+	// DeleteByBroadcaster removes every track owned by broadcasterID and
+	// returns them, so the caller can clean up the audio objects they point at.
+	DeleteByBroadcaster(ctx context.Context, broadcasterID string) ([]Track, error)
 }
 
 type pgRepo struct {
@@ -124,6 +127,33 @@ func (r *pgRepo) Delete(ctx context.Context, id, requesterID string) (*Track, er
 		return nil, ErrNotFound
 	}
 	return t, err
+}
+
+func (r *pgRepo) DeleteByBroadcaster(ctx context.Context, broadcasterID string) ([]Track, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbQueryTimeout)
+	defer cancel()
+
+	// RETURNING rather than a SELECT followed by a DELETE: one statement means
+	// a track uploaded between the two cannot survive as a row-less S3 object.
+	const q = `
+		DELETE FROM tracks WHERE broadcaster_id = $1
+		RETURNING id, broadcaster_id, title, artist, audio_url, duration_seconds, created_at`
+
+	rows, err := r.pool.Query(ctx, q, broadcasterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tracks []Track
+	for rows.Next() {
+		t, err := scanTrack(rows)
+		if err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, *t)
+	}
+	return tracks, rows.Err()
 }
 
 // scanner is satisfied by both pgx.Row and pgx.Rows.
