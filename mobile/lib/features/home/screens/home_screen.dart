@@ -262,8 +262,26 @@ class _HomeBodyState extends State<_HomeBody> {
   @override
   void initState() {
     super.initState();
-    final token = context.read<AuthNotifier>().accessToken ?? '';
-    context.read<HomeNotifier>().refreshLiveStreams(token);
+    // Deferred to after the frame, and not merely as a convention.
+    //
+    // _HomeBody is inflated from HomeScreen.build, so initState runs inside
+    // the build pass that is rebuilding HomeScreen's own element — which is
+    // exactly what happens when the Home tab is re-selected after a detour
+    // through Browse/Search/Profile. refreshLiveStreams() calls
+    // notifyListeners(), HomeNotifier marks the *currently building* HomeScreen
+    // element dirty, and BuildOwner drops that request (the element is already
+    // in the dirty list) while leaving Element._dirty set. From then on every
+    // markNeedsBuild() short-circuits on `if (_dirty) return`, and HomeScreen
+    // never rebuilds again: the bottom navigation bar, the FAB and the mini
+    // player all freeze. Every other screen in the app already defers for the
+    // same reason.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final token = context.read<AuthNotifier>().accessToken ?? '';
+      context.read<HomeNotifier>().refreshLiveStreams(token);
+    });
   }
 
   bool get dark => widget.dark;
